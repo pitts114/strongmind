@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:18.0
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - strongmind_postgres_data:/var/lib/postgresql/18/docker
+  redis:
+    image: redis:8.2.2
+    ports:
+      - '6379:6379'
+volumes:
+  strongmind_postgres_data:
