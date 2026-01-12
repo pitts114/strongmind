@@ -1,0 +1,9 @@
+#!/usr/bin/env ruby
+
+# Load Rails environment
+require_relative "../config/environment"
+
+# Start the ingestion worker
+# Poll interval can be configured via INGESTION_POLL_INTERVAL env var
+# or defaults to 60 seconds
+IngestionWorker.new.start
