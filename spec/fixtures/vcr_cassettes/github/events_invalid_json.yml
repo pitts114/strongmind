@@ -1,0 +1,25 @@
+---
+http_interactions:
+- request:
+    method: get
+    uri: https://api.github.com/events
+    body:
+      encoding: US-ASCII
+      string: ''
+    headers:
+      Accept:
+      - application/vnd.github+json
+      X-Github-Api-Version:
+      - '2022-11-28'
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Content-Type:
+      - application/json; charset=utf-8
+    body:
+      encoding: UTF-8
+      string: 'this is not valid json {'
+  recorded_at: Sun, 12 Jan 2026 00:00:00 GMT
+recorded_with: VCR 6.4.0

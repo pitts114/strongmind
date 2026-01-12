@@ -69,3 +69,10 @@ group :development do
 end
 
 gem "rspec-rails", "~> 8.0", groups: [ :development, :test ]
+
+group :test do
+  # Record and replay HTTP interactions for testing
+  gem "vcr"
+  # Stub HTTP requests in tests
+  gem "webmock"
+end
