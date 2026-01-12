@@ -240,6 +240,8 @@ GEM
       erb
       psych (>= 4.0.0)
       tsort
+    redis (5.4.1)
+      redis-client (>= 0.22.0)
     redis-client (0.26.1)
       connection_pool
     regexp_parser (2.11.3)
@@ -379,6 +381,7 @@ DEPENDENCIES
   puma (>= 5.0)
   rack-cors
   rails (~> 8.0.3)
+  redis (~> 5.0)
   rspec-rails (~> 8.0)
   rubocop-rails-omakase
   sidekiq (~> 7.0)

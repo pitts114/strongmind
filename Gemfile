@@ -39,6 +39,9 @@ gem "solid_cable"
 # Background job processing [https://github.com/sidekiq/sidekiq]
 gem "sidekiq", "~> 7.0"
 
+# Redis client for rate limiting and caching [https://github.com/redis/redis-rb]
+gem "redis", "~> 5.0"
+
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 
