@@ -1,6 +1,6 @@
 class GithubGateway
   def initialize
-    @client = Github::Client.new
+    @client = create_client
   end
 
   def list_public_events
@@ -10,4 +10,10 @@ class GithubGateway
   private
 
   attr_reader :client
+
+  def create_client
+    redis = ::Redis.new(url: ENV.fetch("REDIS_URL"))
+    storage = Storage::Redis.new(redis: redis)
+    Github::Client.new(storage: storage)
+  end
 end

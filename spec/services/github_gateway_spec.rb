@@ -5,6 +5,8 @@ RSpec.describe GithubGateway do
   let(:client) { instance_double(Github::Client) }
 
   before do
+    # Set REDIS_URL for all tests
+    stub_const("ENV", ENV.to_hash.merge("REDIS_URL" => "redis://localhost:6379/1"))
     allow(Github::Client).to receive(:new).and_return(client)
   end
 
