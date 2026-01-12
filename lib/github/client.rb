@@ -1,6 +1,9 @@
 require "net/http"
 require "json"
 require "uri"
+require_relative "storage"
+require_relative "storage/memory"
+require_relative "rate_limiter"
 
 module Github
   class Client
@@ -31,22 +34,44 @@ module Github
 
     class ClientError < Error; end         # Other 4xx
 
-    attr_reader :base_url, :api_version, :timeout
+    attr_reader :base_url, :api_version, :timeout, :rate_limiter
 
     # Initialize with optional configuration
-    def initialize(base_url: DEFAULT_BASE_URL, api_version: DEFAULT_API_VERSION, timeout: DEFAULT_TIMEOUT)
+    # @param base_url [String] GitHub API base URL
+    # @param api_version [String] GitHub API version
+    # @param timeout [Integer] Request timeout in seconds
+    # @param storage [Github::Storage::Interface, nil] Storage backend for rate limiting
+    # @param rate_limit_resource [String] GitHub resource type for rate limiting
+    def initialize(
+      base_url: DEFAULT_BASE_URL,
+      api_version: DEFAULT_API_VERSION,
+      timeout: DEFAULT_TIMEOUT,
+      storage: Storage::Memory.new,
+      rate_limit_resource: RateLimiter::DEFAULT_RESOURCE
+    )
       @base_url = base_url
       @api_version = api_version
       @timeout = timeout
+
+      @rate_limiter = RateLimiter.new(
+        storage: storage,
+        resource: rate_limit_resource
+      )
     end
 
     # List public events from GitHub
     # @return [Array<Hash>] Array of event hashes
-    # @raise [RateLimitError] when rate limit is exceeded
+    # @raise [RateLimitError] when rate limit is exceeded (legacy - now we sleep instead)
     # @raise [ServerError] on server errors or network failures
     # @raise [ClientError] on client errors
     def list_public_events
+      # Check rate limit before making request (may sleep)
+      rate_limiter.check_limit
+
       response = make_request(endpoint: "/events")
+
+      # Record rate limit info from response
+      rate_limiter.record_limit(response.to_hash)
 
       case response
       when Net::HTTPSuccess

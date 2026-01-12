@@ -209,4 +209,61 @@ RSpec.describe Github::Client do
       end
     end
   end
+
+  describe "rate limiting integration" do
+    let(:storage) { Github::Storage::Memory.new }
+    let(:client) { described_class.new(storage: storage) }
+
+    context "when rate limit headers are present" do
+      it "records rate limit information" do
+        VCR.use_cassette("github/events_success") do
+          client.list_public_events
+
+          # Check that rate limit was recorded
+          stored_data = JSON.parse(storage.get("github:rate_limit:core"))
+          expect(stored_data).not_to be_nil
+          expect(stored_data["remaining"].to_i).to be >= 0
+        end
+      end
+    end
+
+    context "when rate limit is exhausted" do
+      it "sleeps before making request" do
+        # First, record a rate limit of 0
+        reset_time = Time.now.to_i + 2
+        storage.set(
+          "github:rate_limit:core",
+          JSON.generate({
+            "limit" => "60",
+            "remaining" => "0",
+            "reset" => reset_time.to_s,
+            "resource" => "core"
+          })
+        )
+
+        # Mock the sleep to avoid waiting in tests
+        allow(client.rate_limiter).to receive(:sleep)
+
+        VCR.use_cassette("github/events_success") do
+          client.list_public_events
+          expect(client.rate_limiter).to have_received(:sleep)
+        end
+      end
+    end
+
+    context "with custom storage" do
+      it "uses provided storage backend" do
+        custom_storage = instance_double(Github::Storage::Memory)
+        allow(custom_storage).to receive(:get).and_return(nil)
+        allow(custom_storage).to receive(:set)
+
+        client_with_storage = described_class.new(storage: custom_storage)
+
+        VCR.use_cassette("github/events_success") do
+          client_with_storage.list_public_events
+          expect(custom_storage).to have_received(:set)
+        end
+      end
+    end
+  end
 end
