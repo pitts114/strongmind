@@ -1,0 +1,2 @@
+class GithubPushEvent < ApplicationRecord
+end
