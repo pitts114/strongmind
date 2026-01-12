@@ -24,7 +24,7 @@ RSpec.describe PushEventFetcher do
         expect(result).to be_an(Array)
         expect(result.length).to eq(2)
         expect(result).to all(include("type" => "PushEvent"))
-        expect(result.map { |e| e["id"] }).to eq(["1", "3"])
+        expect(result.map { |e| e["id"] }).to eq([ "1", "3" ])
       end
     end
 
