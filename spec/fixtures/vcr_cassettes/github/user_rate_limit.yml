@@ -1,0 +1,35 @@
+---
+http_interactions:
+- request:
+    method: get
+    uri: https://api.github.com/users/octocat
+    body:
+      encoding: US-ASCII
+      string: ''
+    headers:
+      Accept:
+      - application/vnd.github+json
+      X-Github-Api-Version:
+      - '2022-11-28'
+  response:
+    status:
+      code: 403
+      message: Forbidden
+    headers:
+      Content-Type:
+      - application/json; charset=utf-8
+      X-Ratelimit-Limit:
+      - '60'
+      X-Ratelimit-Remaining:
+      - '0'
+      X-Ratelimit-Reset:
+      - '1704067200'
+    body:
+      encoding: UTF-8
+      string: |
+        {
+          "message": "API rate limit exceeded for 0.0.0.0. (But here's the good news: Authenticated requests get a higher rate limit. Check out the documentation for more details.)",
+          "documentation_url": "https://docs.github.com/rest/overview/resources-in-the-rest-api#rate-limiting"
+        }
+  recorded_at: Tue, 13 Jan 2026 19:00:20 GMT
+recorded_with: VCR 6.4.0

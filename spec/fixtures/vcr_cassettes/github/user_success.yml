@@ -1,0 +1,84 @@
+---
+http_interactions:
+- request:
+    method: get
+    uri: https://api.github.com/users/octocat
+    body:
+      encoding: US-ASCII
+      string: ''
+    headers:
+      Accept-Encoding:
+      - gzip;q=1.0,deflate;q=0.6,identity;q=0.3
+      Accept:
+      - application/vnd.github+json
+      User-Agent:
+      - Ruby
+      Host:
+      - api.github.com
+      X-Github-Api-Version:
+      - '2022-11-28'
+  response:
+    status:
+      code: 200
+      message: OK
+    headers:
+      Date:
+      - Tue, 13 Jan 2026 18:52:39 GMT
+      Content-Type:
+      - application/json; charset=utf-8
+      Cache-Control:
+      - public, max-age=60, s-maxage=60
+      Vary:
+      - Accept,Accept-Encoding, Accept, X-Requested-With
+      Etag:
+      - W/"e1015ba3548006b6bb51f44db700d6a0c52fe5b3d7584ca284a0838787909c9a"
+      Last-Modified:
+      - Mon, 22 Dec 2025 12:24:29 GMT
+      X-Github-Media-Type:
+      - github.v3; format=json
+      X-Github-Api-Version-Selected:
+      - '2022-11-28'
+      Access-Control-Expose-Headers:
+      - ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining,
+        X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes,
+        X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO,
+        X-GitHub-Request-Id, Deprecation, Sunset
+      Access-Control-Allow-Origin:
+      - "*"
+      Strict-Transport-Security:
+      - max-age=31536000; includeSubdomains; preload
+      X-Frame-Options:
+      - deny
+      X-Content-Type-Options:
+      - nosniff
+      X-Xss-Protection:
+      - '0'
+      Referrer-Policy:
+      - origin-when-cross-origin, strict-origin-when-cross-origin
+      Content-Security-Policy:
+      - default-src 'none'
+      Server:
+      - github.com
+      Accept-Ranges:
+      - bytes
+      X-Ratelimit-Limit:
+      - '60'
+      X-Ratelimit-Remaining:
+      - '59'
+      X-Ratelimit-Reset:
+      - '1768333959'
+      X-Ratelimit-Resource:
+      - core
+      X-Ratelimit-Used:
+      - '1'
+      Content-Length:
+      - '1216'
+      X-Github-Request-Id:
+      - DA8C:319E3E:61931B:1A72B67:69669477
+    body:
+      encoding: ASCII-8BIT
+      string: '{"login":"octocat","id":583231,"node_id":"MDQ6VXNlcjU4MzIzMQ==","avatar_url":"https://avatars.githubusercontent.com/u/583231?v=4","gravatar_id":"","url":"https://api.github.com/users/octocat","html_url":"https://github.com/octocat","followers_url":"https://api.github.com/users/octocat/followers","following_url":"https://api.github.com/users/octocat/following{/other_user}","gists_url":"https://api.github.com/users/octocat/gists{/gist_id}","starred_url":"https://api.github.com/users/octocat/starred{/owner}{/repo}","subscriptions_url":"https://api.github.com/users/octocat/subscriptions","organizations_url":"https://api.github.com/users/octocat/orgs","repos_url":"https://api.github.com/users/octocat/repos","events_url":"https://api.github.com/users/octocat/events{/privacy}","received_events_url":"https://api.github.com/users/octocat/received_events","type":"User","user_view_type":"public","site_admin":false,"name":"The
+        Octocat","company":"@github","blog":"https://github.blog","location":"San
+        Francisco","email":null,"hireable":null,"bio":null,"twitter_username":null,"public_repos":8,"public_gists":8,"followers":21495,"following":9,"created_at":"2011-01-25T18:44:36Z","updated_at":"2025-12-22T12:24:29Z"}'
+  recorded_at: Tue, 13 Jan 2026 18:52:39 GMT
+recorded_with: VCR 6.4.0
