@@ -7,6 +7,14 @@ class GithubGateway
     client.list_public_events
   end
 
+  def get_user(username:)
+    client.get_user(username: username)
+  end
+
+  def get_repository(owner:, repo:)
+    client.get_repository(owner: owner, repo: repo)
+  end
+
   private
 
   attr_reader :client
