@@ -13,7 +13,6 @@
 ActiveRecord::Schema[8.0].define(version: 2026_01_13_002622) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
-  enable_extension "pgcrypto"
 
   create_table "github_push_events", id: :string, force: :cascade do |t|
     t.bigint "repository_id"
@@ -23,6 +22,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_13_002622) do
     t.string "before"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.json "raw"
+    t.json "raw_payload"
   end
 end
