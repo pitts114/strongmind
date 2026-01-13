@@ -34,6 +34,7 @@ RSpec.describe PushEventSaver do
         expect(result.ref).to eq("refs/heads/main")
         expect(result.head).to eq("4b1846dac162ab1ec2631e721be3c40ec74d8f22")
         expect(result.before).to eq("bcccb36af5254b06e9e99e74a4fbf29ab7ed5b2a")
+        expect(result.raw).to eq(event_data)
       end
 
       it "returns the created record" do
