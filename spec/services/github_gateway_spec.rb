@@ -56,4 +56,52 @@ RSpec.describe GithubGateway do
       end
     end
   end
+
+  describe "#get_user" do
+    context "when client returns user successfully" do
+      it "delegates to client and returns the user data" do
+        user_data = {
+          "id" => 583231,
+          "login" => "octocat",
+          "name" => "The Octocat"
+        }
+        allow(client).to receive(:get_user).with(username: "octocat").and_return(user_data)
+
+        result = gateway.get_user(username: "octocat")
+
+        expect(result).to eq(user_data)
+        expect(client).to have_received(:get_user).with(username: "octocat")
+      end
+    end
+
+    context "when client raises ClientError (404)" do
+      it "propagates the error" do
+        allow(client).to receive(:get_user).and_raise(
+          Github::Client::ClientError.new("Not found", status_code: 404, response_body: "")
+        )
+
+        expect { gateway.get_user(username: "nonexistent") }.to raise_error(Github::Client::ClientError)
+      end
+    end
+
+    context "when client raises RateLimitError" do
+      it "propagates the error" do
+        allow(client).to receive(:get_user).and_raise(
+          Github::Client::RateLimitError.new("Rate limit exceeded", status_code: 429, response_body: "")
+        )
+
+        expect { gateway.get_user(username: "octocat") }.to raise_error(Github::Client::RateLimitError)
+      end
+    end
+
+    context "when client raises ServerError" do
+      it "propagates the error" do
+        allow(client).to receive(:get_user).and_raise(
+          Github::Client::ServerError.new("Server error", status_code: 500, response_body: "")
+        )
+
+        expect { gateway.get_user(username: "octocat") }.to raise_error(Github::Client::ServerError)
+      end
+    end
+  end
 end
