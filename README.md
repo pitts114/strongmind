@@ -1,5 +1,17 @@
 # Development
 
+## Setup
+1. **Create Environment File**
+   ```bash
+   # Copy the template (already has working defaults)
+   cp .env.example .env
+   ```
+
+2. **Install Dependencies**
+   ```bash
+   bundle install
+   ```
+
 ## Server
 `bundle exec rails server`
 
