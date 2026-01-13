@@ -65,14 +65,60 @@ module Github
     # @raise [ServerError] on server errors or network failures
     # @raise [ClientError] on client errors
     def list_public_events
+      execute_request(endpoint: "/events")
+    end
+
+    # Fetch a specific GitHub user by username
+    # @param username [String] GitHub username (e.g., "octocat")
+    # @return [Hash] User data hash
+    # @raise [RateLimitError] when rate limit is exceeded (legacy - now we sleep instead)
+    # @raise [ServerError] on server errors or network failures
+    # @raise [ClientError] on client errors (e.g., 404 user not found)
+    def get_user(username:)
+      execute_request(endpoint: "/users/#{username}")
+    end
+
+    # Fetch a specific GitHub repository
+    # @param owner [String] Repository owner (username or org name)
+    # @param repo [String] Repository name
+    # @return [Hash] Repository data hash
+    # @raise [RateLimitError] when rate limit is exceeded (legacy - now we sleep instead)
+    # @raise [ServerError] on server errors or network failures
+    # @raise [ClientError] on client errors (e.g., 404 repo not found)
+    def get_repository(owner:, repo:)
+      execute_request(endpoint: "/repos/#{owner}/#{repo}")
+    end
+
+    private
+
+    # Execute an API request with rate limiting and error handling
+    # @param endpoint [String] API endpoint path
+    # @return [Array<Hash>, Hash] Parsed JSON response
+    # @raise [RateLimitError] when rate limit is exceeded
+    # @raise [ServerError] on server errors or network failures
+    # @raise [ClientError] on client errors
+    # @raise [NotModifiedError] when resource hasn't changed (304)
+    def execute_request(endpoint:)
       # Check rate limit before making request (may sleep)
       rate_limiter.check_limit
 
-      response = make_request(endpoint: "/events")
+      response = make_request(endpoint: endpoint)
 
       # Record rate limit info from response
       rate_limiter.record_limit(response.to_hash)
 
+      handle_response(response: response)
+    rescue Timeout::Error, Errno::ECONNREFUSED, Errno::ECONNRESET, SocketError => e
+      raise ServerError.new("Network error: #{e.message}")
+    rescue JSON::ParserError => e
+      raise ServerError.new("Invalid JSON response: #{e.message}")
+    end
+
+    # Handle HTTP response and raise appropriate errors
+    # @param response [Net::HTTPResponse]
+    # @return [Array<Hash>, Hash] Parsed JSON response on success
+    # @raise [RateLimitError, ServerError, ClientError, NotModifiedError]
+    def handle_response(response:)
       case response
       when Net::HTTPSuccess
         parse_response(response: response)
@@ -82,12 +128,29 @@ module Github
           status_code: response.code.to_i,
           response_body: response.body
         )
-      when Net::HTTPForbidden
+      when Net::HTTPTooManyRequests
+        # 429 always indicates rate limiting (primary or secondary)
         raise RateLimitError.new(
           "GitHub API rate limit exceeded",
           status_code: response.code.to_i,
           response_body: response.body
         )
+      when Net::HTTPForbidden
+        # 403 can be rate limiting OR access denied
+        if rate_limit_exceeded?(response)
+          raise RateLimitError.new(
+            "GitHub API rate limit exceeded",
+            status_code: response.code.to_i,
+            response_body: response.body
+          )
+        else
+          # Regular forbidden error (e.g., private repo, insufficient permissions)
+          raise ClientError.new(
+            "GitHub API error: #{response.code} #{response.message}",
+            status_code: response.code.to_i,
+            response_body: response.body
+          )
+        end
       when Net::HTTPServerError
         raise ServerError.new(
           "GitHub API server error: #{response.code} #{response.message}",
@@ -97,13 +160,30 @@ module Github
       else
         handle_error_response(response: response)
       end
-    rescue Timeout::Error, Errno::ECONNREFUSED, Errno::ECONNRESET, SocketError => e
-      raise ServerError.new("Network error: #{e.message}")
-    rescue JSON::ParserError => e
-      raise ServerError.new("Invalid JSON response: #{e.message}")
     end
 
-    private
+    # Check if a 403 response is due to rate limiting
+    # GitHub can return 403 for both rate limiting and access denied
+    # @param response [Net::HTTPResponse]
+    # @return [Boolean] true if rate limit is exceeded
+    def rate_limit_exceeded?(response)
+      # Primary rate limit: X-RateLimit-Remaining header is 0
+      remaining = response["x-ratelimit-remaining"]
+      return true if remaining && remaining.to_i == 0
+
+      # Secondary rate limit: check for retry-after header or rate limit message
+      return true if response["retry-after"]
+
+      # Fallback: check response body for rate limit message
+      return false unless response.body
+
+      begin
+        body = JSON.parse(response.body)
+        body["message"]&.match?(/rate limit/i)
+      rescue JSON::ParserError
+        false
+      end
+    end
 
     # Make HTTP GET request to GitHub API
     # @param endpoint [String] API endpoint path

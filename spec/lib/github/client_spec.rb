@@ -190,6 +190,180 @@ RSpec.describe Github::Client do
     end
   end
 
+  describe "#get_user" do
+    let(:client) { described_class.new }
+
+    context "when request is successful" do
+      it "returns user data hash" do
+        VCR.use_cassette("github/user_success") do
+          user = client.get_user(username: "octocat")
+
+          expect(user).to be_a(Hash)
+          expect(user["id"]).to be_a(Integer)
+          expect(user["login"]).to eq("octocat")
+          expect(user["type"]).to eq("User")
+          expect(user).to have_key("public_repos")
+          expect(user).to have_key("followers")
+        end
+      end
+    end
+
+    context "when user is not found (404)" do
+      it "raises ClientError" do
+        VCR.use_cassette("github/user_not_found") do
+          expect { client.get_user(username: "this-user-definitely-does-not-exist-12345") }
+            .to raise_error(Github::Client::ClientError) do |error|
+              expect(error.status_code).to eq(404)
+            end
+        end
+      end
+    end
+
+    context "when rate limit is exceeded (403)" do
+      it "raises RateLimitError" do
+        VCR.use_cassette("github/user_rate_limit") do
+          expect { client.get_user(username: "octocat") }
+            .to raise_error(Github::Client::RateLimitError) do |error|
+              expect(error.message).to eq("GitHub API rate limit exceeded")
+              expect(error.status_code).to eq(403)
+            end
+        end
+      end
+    end
+
+    context "when access is forbidden but not rate limited (403)" do
+      it "raises ClientError" do
+        VCR.use_cassette("github/user_forbidden") do
+          expect { client.get_user(username: "octocat") }
+            .to raise_error(Github::Client::ClientError) do |error|
+              expect(error.status_code).to eq(403)
+            end
+        end
+      end
+    end
+
+    context "when too many requests (429)" do
+      it "raises RateLimitError" do
+        VCR.use_cassette("github/user_too_many_requests") do
+          expect { client.get_user(username: "octocat") }
+            .to raise_error(Github::Client::RateLimitError) do |error|
+              expect(error.message).to eq("GitHub API rate limit exceeded")
+              expect(error.status_code).to eq(429)
+            end
+        end
+      end
+    end
+
+    context "when server error occurs (500)" do
+      it "raises ServerError" do
+        VCR.use_cassette("github/user_server_error") do
+          expect { client.get_user(username: "octocat") }
+            .to raise_error(Github::Client::ServerError) do |error|
+              expect(error.status_code).to eq(500)
+            end
+        end
+      end
+    end
+
+    context "when network error occurs" do
+      it "raises ServerError" do
+        stub_request(:get, "https://api.github.com/users/octocat")
+          .to_timeout
+
+        expect { client.get_user(username: "octocat") }
+          .to raise_error(Github::Client::ServerError, /Network error/)
+      end
+    end
+  end
+
+  describe "#get_repository" do
+    let(:client) { described_class.new }
+
+    context "when request is successful" do
+      it "returns repository data hash" do
+        VCR.use_cassette("github/repository_success") do
+          repo = client.get_repository(owner: "octocat", repo: "Hello-World")
+
+          expect(repo).to be_a(Hash)
+          expect(repo["id"]).to be_a(Integer)
+          expect(repo["name"]).to eq("Hello-World")
+          expect(repo["full_name"]).to eq("octocat/Hello-World")
+          expect(repo["owner"]).to be_a(Hash)
+          expect(repo["owner"]["login"]).to eq("octocat")
+          expect(repo).to have_key("stargazers_count")
+          expect(repo).to have_key("forks_count")
+        end
+      end
+    end
+
+    context "when repository is not found (404)" do
+      it "raises ClientError" do
+        VCR.use_cassette("github/repository_not_found") do
+          expect { client.get_repository(owner: "octocat", repo: "does-not-exist-12345") }
+            .to raise_error(Github::Client::ClientError) do |error|
+              expect(error.status_code).to eq(404)
+            end
+        end
+      end
+    end
+
+    context "when rate limit is exceeded (403)" do
+      it "raises RateLimitError" do
+        VCR.use_cassette("github/repository_rate_limit") do
+          expect { client.get_repository(owner: "octocat", repo: "Hello-World") }
+            .to raise_error(Github::Client::RateLimitError) do |error|
+              expect(error.message).to eq("GitHub API rate limit exceeded")
+              expect(error.status_code).to eq(403)
+            end
+        end
+      end
+    end
+
+    context "when access is forbidden but not rate limited (403)" do
+      it "raises ClientError" do
+        VCR.use_cassette("github/repository_forbidden") do
+          expect { client.get_repository(owner: "octocat", repo: "Hello-World") }
+            .to raise_error(Github::Client::ClientError) do |error|
+              expect(error.status_code).to eq(403)
+            end
+        end
+      end
+    end
+
+    context "when too many requests (429)" do
+      it "raises RateLimitError" do
+        VCR.use_cassette("github/repository_too_many_requests") do
+          expect { client.get_repository(owner: "octocat", repo: "Hello-World") }
+            .to raise_error(Github::Client::RateLimitError) do |error|
+              expect(error.message).to eq("GitHub API rate limit exceeded")
+              expect(error.status_code).to eq(429)
+            end
+        end
+      end
+    end
+
+    context "when server error occurs (500)" do
+      it "raises ServerError" do
+        VCR.use_cassette("github/repository_server_error") do
+          expect { client.get_repository(owner: "octocat", repo: "Hello-World") }
+            .to raise_error(Github::Client::ServerError) do |error|
+              expect(error.status_code).to eq(500)
+            end
+        end
+      end
+    end
+
+    context "when network error occurs" do
+      it "raises ServerError" do
+        stub_request(:get, "https://api.github.com/repos/octocat/Hello-World")
+          .to_timeout
+
+        expect { client.get_repository(owner: "octocat", repo: "Hello-World") }
+          .to raise_error(Github::Client::ServerError, /Network error/)
+      end
+    end
+  end
+
   describe "HTTP configuration" do
     it "sends required headers" do
       VCR.use_cassette("github/events_verify_headers") do
