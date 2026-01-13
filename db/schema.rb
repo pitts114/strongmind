@@ -13,7 +13,6 @@
 ActiveRecord::Schema[8.0].define(version: 2026_01_13_010828) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
-  enable_extension "pgcrypto"
 
   create_table "github_push_events", id: :string, force: :cascade do |t|
     t.bigint "repository_id"
@@ -25,7 +24,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_13_010828) do
     t.datetime "updated_at", null: false
     t.json "raw"
     t.bigint "actor_id"
-    t.bigint "repo_id"
   end
 
   create_table "github_repositories", force: :cascade do |t|
@@ -116,10 +114,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_13_010828) do
     t.datetime "pushed_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["full_name"], name: "index_github_repositories_on_full_name", unique: true
-    t.index ["language"], name: "index_github_repositories_on_language"
-    t.index ["owner_id"], name: "index_github_repositories_on_owner_id"
-    t.index ["visibility"], name: "index_github_repositories_on_visibility"
   end
 
   create_table "github_users", force: :cascade do |t|
@@ -157,7 +151,5 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_13_010828) do
     t.datetime "github_updated_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["login"], name: "index_github_users_on_login", unique: true
-    t.index ["type"], name: "index_github_users_on_type"
   end
 end
