@@ -34,12 +34,16 @@ MyService.new.call(param: value)
 ```
 
 **Key Services:**
+- `FetchAndEnqueuePushEventsService` - Main orchestrator (called by worker)
 - `PushEventFetcher` - Fetches events from GitHub API
-- `PushEventSaver` - Saves push events to database
-- `PushEventHandler` - Orchestrates event saving + enqueueing fetch jobs
-- `GithubUserFetcher` - Fetches and saves user data
-- `GithubRepositoryFetcher` - Fetches and saves repository data
-- `FetchAndEnqueuePushEventsService` - Main orchestrator
+- `PushEventSaver` - Saves push events to database (find_or_create)
+- `PushEventHandler` - Coordinates event saving + job enqueueing
+- `PushEventRelatedFetchesEnqueuer` - Decides which fetch jobs to enqueue
+- `PushEventDataExtractor` - Extracts actor/repo data from events
+- `GithubUserFetcher` - Fetches user data from API
+- `GithubUserSaver` - Saves user data to database (find_or_initialize + update)
+- `GithubRepositoryFetcher` - Fetches repository data from API
+- `GithubRepositorySaver` - Saves repository data to database (find_or_initialize + update)
 
 ### 2. Gateway Pattern
 
@@ -182,21 +186,164 @@ client = Github::Client.new(storage: storage)
                ▼
 ┌─────────────────────────────────────┐
 │ PushEventHandler                    │
-│ 1. Save push event                  │
-│ 2. Extract actor login              │
-│ 3. Extract repo owner/name          │
-│ 4. Enqueue user fetch job           │
-│ 5. Enqueue repo fetch job           │
+│ 1. Call PushEventSaver              │
+│ 2. Call PushEventRelatedFetchesEnq. │
 └──────────────┬──────────────────────┘
                │
        ┌───────┴───────┐
        ▼               ▼
-┌──────────────┐  ┌──────────────────┐
-│ User Job     │  │ Repository Job   │
-│ → Fetcher    │  │ → Fetcher        │
-│ → Save User  │  │ → Save Repo      │
-└──────────────┘  └──────────────────┘
+┌──────────────┐  ┌──────────────────────────┐
+│ PushEventSav.│  │ PushEventRelatedFetches  │
+│ → find_or_cr │  │ Enqueuer                 │
+│   ate event  │  │ → PushEventDataExtractor │
+│              │  │ → Determine actor type   │
+│              │  │ → Enqueue repo job       │
+│              │  │ → Enqueue user job if    │
+│              │  │   actor is :user         │
+└──────────────┘  └──────────┬───────────────┘
+                             │
+                     ┌───────┴───────┐
+                     ▼               ▼
+          ┌─────────────────┐  ┌─────────────────┐
+          │ User Job        │  │ Repository Job  │
+          │ → UserFetcher   │  │ → RepoFetcher   │
+          │ → UserSaver     │  │ → RepoSaver     │
+          └─────────────────┘  └─────────────────┘
 ```
+
+---
+
+## Actor Type Detection
+
+The system distinguishes between different actor types when processing push events:
+
+### PushEventDataExtractor
+
+```ruby
+class PushEventDataExtractor
+  def actor
+    url = actor_url
+    return nil unless url
+
+    # Match pattern: https://api.github.com/users/username
+    match = url.match(%r{^https?://[^/]+/users/([^/]+)$})
+    return :unknown unless match
+
+    username = match[1]
+    username.end_with?("[bot]") ? :bot : :user
+  end
+end
+```
+
+**Actor Types:**
+- `:user` - Regular GitHub user (URL matches `/users/{username}` pattern)
+- `:bot` - Bot account (URL matches `/users/{username}` pattern with `[bot]` suffix)
+- `:unknown` - Organization or unrecognized actor type (e.g., `/orgs/{org}`)
+- `nil` - Missing actor URL
+
+**Examples:**
+```ruby
+# User
+{ "url" => "https://api.github.com/users/octocat" } → :user
+
+# Bot
+{ "url" => "https://api.github.com/users/github-actions[bot]" } → :bot
+
+# Organization
+{ "url" => "https://api.github.com/orgs/github" } → :unknown
+```
+
+**Behavior:**
+- User fetch jobs are **only enqueued for `:user` actors**
+- Bots and unknown actors are **skipped** with info logging
+- Repository fetch jobs are **always enqueued** regardless of actor type
+
+---
+
+## Idempotency Guarantees
+
+The system is designed to handle retries, duplicate events, and concurrent operations safely.
+
+### What IS Idempotent ✓
+
+**Database Layer:**
+- `PushEventSaver` - Uses `find_or_create_by!(id: ...)` with GitHub event ID
+- `GithubUserSaver` - Uses `find_or_initialize_by(id: ...) + update!` pattern
+- `GithubRepositorySaver` - Uses `find_or_initialize_by(id: ...) + update!` pattern
+- All use GitHub IDs as primary keys - database constraints prevent duplicates
+
+**Multiple executions produce the same final state:**
+```ruby
+# Safe to call multiple times
+GithubUserSaver.new.call(user_data: data)  # First call: creates
+GithubUserSaver.new.call(user_data: data)  # Second call: updates with same data
+# Result: 1 record with correct data
+```
+
+### What ISN'T Idempotent (But That's Acceptable) ✗
+
+**Job Enqueueing:**
+- `PushEventRelatedFetchesEnqueuer` - Calling multiple times enqueues duplicate jobs
+- `HandlePushEventJob` retries - Each retry re-enqueues fetch jobs
+- No job deduplication at the queue level
+
+**Why this is acceptable:**
+1. **Data correctness is guaranteed** - Saver services prevent duplicate records
+2. **Final state is always correct** - Duplicate jobs update same records safely
+3. **Rare occurrence** - Retries/redelivery happen infrequently
+4. **Generous API limits** - GitHub allows 5000 requests/hour for authenticated apps
+5. **No user-facing impact** - Duplicate work is invisible to users
+
+**Example scenario:**
+```
+HandlePushEventJob retries due to deadlock:
+  → PushEventSaver returns existing event ✓
+  → PushEventRelatedFetchesEnqueuer enqueues duplicate fetch jobs ✗
+  → 2 FetchAndSaveGithubUserJobs execute
+  → Both fetch from API (redundant API calls)
+  → Both call GithubUserSaver (idempotent saves)
+  → Result: 1 user record, correct data, wasted 1 API call
+```
+
+**Trade-off:** System prioritizes **correctness over efficiency** - this is the right choice for data integrity.
+
+---
+
+## Separation of Concerns: Fetcher vs Saver
+
+Services are split into distinct responsibilities following SOLID principles:
+
+### Fetcher Services
+**Responsibility:** Make API calls and delegate to savers
+
+```ruby
+class GithubUserFetcher
+  def call(username:)
+    user_data = gateway.get_user(username: username)
+    GithubUserSaver.new.call(user_data: user_data)
+  end
+end
+```
+
+### Saver Services
+**Responsibility:** Handle persistence and attribute mapping
+
+```ruby
+class GithubUserSaver
+  def call(user_data:)
+    attributes = map_user_attributes(user_data)
+    user = GithubUser.find_or_initialize_by(id: attributes[:id])
+    user.update!(attributes.except(:id))
+    user
+  end
+end
+```
+
+**Benefits:**
+- Fetchers can be tested by stubbing gateway
+- Savers can be tested with raw data hashes (no API calls)
+- Savers are easily reusable (e.g., from webhooks, bulk imports, etc.)
+- Clear separation makes code easier to understand and modify
 
 ---
 
@@ -310,18 +457,47 @@ expect {
 
 4. **Create VCR cassettes** for client tests (if needed)
 
-### Adding a New Fetcher Service
+### Adding a New Fetcher/Saver Service Pair
 
-1. **Create service** (`app/services/thing_fetcher.rb`):
+Follow the Fetcher + Saver pattern for separation of concerns:
+
+1. **Create Saver service** (`app/services/github_thing_saver.rb`):
    ```ruby
-   class ThingFetcher
+   class GithubThingSaver
+     def call(thing_data:)
+       attributes = map_thing_attributes(thing_data)
+       thing = GithubThing.find_or_initialize_by(id: attributes[:id])
+       thing.update!(attributes.except(:id))
+       thing
+     end
+
+     private
+
+     def map_thing_attributes(data)
+       {
+         id: data["id"],
+         name: data["name"],
+         # ... map all attributes
+       }
+     end
+   end
+   ```
+
+2. **Create Fetcher service** (`app/services/github_thing_fetcher.rb`):
+   ```ruby
+   class GithubThingFetcher
      def initialize(gateway: GithubGateway.new)
        @gateway = gateway
      end
 
      def call(id:)
-       data = gateway.get_thing(id: id)
-       save_thing(data)
+       Rails.logger.info("Fetching GitHub thing: #{id}")
+
+       thing_data = gateway.get_thing(id: id)
+       result = GithubThingSaver.new.call(thing_data: thing_data)
+
+       Rails.logger.info("Saved GitHub thing: #{id}")
+       result
      rescue Github::Client::ClientError => e
        Rails.logger.warn("Thing fetch failed: #{id} - #{e.message}")
        raise
@@ -329,18 +505,13 @@ expect {
 
      private
 
-     def save_thing(data)
-       attributes = map_attributes(data)
-       thing = Thing.find_or_initialize_by(id: attributes[:id])
-       thing.update!(attributes.except(:id))
-       thing
-     end
+     attr_reader :gateway
    end
    ```
 
-2. **Create job** with appropriate retry strategies
+3. **Create job** with appropriate retry strategies
 
-3. **Write tests** using doubles/stubs
+4. **Write tests** - Saver tests use raw data, Fetcher tests stub gateway
 
 ### Running Tests
 
@@ -489,6 +660,10 @@ gateway = GithubGateway.new
 - **#15** - Updated PushEventSaver to store actor_id
 - **#16** - Added get_user and get_repository to GitHub client
 - **#19** - Created services and jobs for fetching/saving user and repo data
+  - Created Fetcher/Saver separation pattern
+  - Created PushEventRelatedFetchesEnqueuer for SOLID compliance
+  - Implemented actor type detection (user/bot/unknown)
+  - Added idempotency analysis
 
 ---
 
@@ -532,6 +707,32 @@ gateway = GithubGateway.new
 
 **Trade-off:** Uses more API quota, but we're far from limits.
 
+### Why Separate Fetcher and Saver Services?
+
+**Problem:** Should fetching and saving be in one service?
+
+**Solution:** Split into `GithubUserFetcher` + `GithubUserSaver` (and same for repos).
+
+**Benefits:**
+- **Single Responsibility** - Fetchers handle API, Savers handle persistence
+- **Testability** - Savers tested with raw data (no API mocking needed)
+- **Reusability** - Savers can be called from webhooks, imports, admin tools
+- **SOLID compliance** - Each class has one reason to change
+
+**Example:** If we add bulk import via CSV, we can reuse `GithubUserSaver` without the API-calling logic.
+
+### Why PushEventRelatedFetchesEnqueuer?
+
+**Problem:** `PushEventHandler` had too many responsibilities.
+
+**Solution:** Extract job enqueueing logic to `PushEventRelatedFetchesEnqueuer`.
+
+**Benefits:**
+- **PushEventHandler** - Simple coordinator (save, then enqueue)
+- **PushEventRelatedFetchesEnqueuer** - Handles job selection and enqueueing
+- **Open/Closed Principle** - Add new job types by only modifying enqueuer
+- **Easier testing** - Each service has focused tests
+
 ---
 
 ## Future Enhancements
@@ -557,4 +758,4 @@ For questions about this project, refer to:
 - Existing code patterns (services and tests)
 - This document
 
-**Last Updated:** January 2026
+**Last Updated:** January 13, 2026
