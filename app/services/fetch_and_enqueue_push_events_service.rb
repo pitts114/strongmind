@@ -17,7 +17,7 @@ class FetchAndEnqueuePushEventsService
 
   def enqueue_jobs(events)
     events.each do |event|
-      SavePushEventJob.perform_later(event)
+      HandlePushEventJob.perform_later(event)
     end
   end
 end

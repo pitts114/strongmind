@@ -22,15 +22,15 @@ RSpec.describe FetchAndEnqueuePushEventsService do
 
       before do
         allow(service).to receive(:fetch_events).and_return(events)
-        allow(SavePushEventJob).to receive(:perform_later)
+        allow(HandlePushEventJob).to receive(:perform_later)
       end
 
       it "enqueues a job for each event" do
         service.call
 
-        expect(SavePushEventJob).to have_received(:perform_later).twice
-        expect(SavePushEventJob).to have_received(:perform_later).with(events[0])
-        expect(SavePushEventJob).to have_received(:perform_later).with(events[1])
+        expect(HandlePushEventJob).to have_received(:perform_later).twice
+        expect(HandlePushEventJob).to have_received(:perform_later).with(events[0])
+        expect(HandlePushEventJob).to have_received(:perform_later).with(events[1])
       end
 
       it "returns metadata about processed events" do
@@ -47,7 +47,7 @@ RSpec.describe FetchAndEnqueuePushEventsService do
       end
 
       it "does not enqueue any jobs" do
-        expect(SavePushEventJob).not_to receive(:perform_later)
+        expect(HandlePushEventJob).not_to receive(:perform_later)
 
         service.call
       end
