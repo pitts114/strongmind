@@ -9,6 +9,10 @@ RSpec.describe PushEventSaver do
         {
           "id" => "7401144939",
           "type" => "PushEvent",
+          "actor" => {
+            "id" => 178611968,
+            "login" => "Gabriel-Gerhardt"
+          },
           "payload" => {
             "repository_id" => 1113957516,
             "push_id" => 29696227683,
@@ -29,6 +33,7 @@ RSpec.describe PushEventSaver do
         result = saver.call(event_data: event_data)
 
         expect(result.id).to eq("7401144939")
+        expect(result.actor_id).to eq(178611968)
         expect(result.repository_id).to eq(1113957516)
         expect(result.push_id).to eq(29696227683)
         expect(result.ref).to eq("refs/heads/main")
