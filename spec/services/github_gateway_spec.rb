@@ -104,4 +104,62 @@ RSpec.describe GithubGateway do
       end
     end
   end
+
+  describe "#get_repository" do
+    context "when client returns repository successfully" do
+      it "delegates to client and returns the repository data" do
+        repo_data = {
+          "id" => 1296269,
+          "name" => "Hello-World",
+          "full_name" => "octocat/Hello-World"
+        }
+        allow(client).to receive(:get_repository).with(owner: "octocat", repo: "Hello-World").and_return(repo_data)
+
+        result = gateway.get_repository(owner: "octocat", repo: "Hello-World")
+
+        expect(result).to eq(repo_data)
+        expect(client).to have_received(:get_repository).with(owner: "octocat", repo: "Hello-World")
+      end
+    end
+
+    context "when client raises ClientError (404)" do
+      it "propagates the error" do
+        allow(client).to receive(:get_repository).and_raise(
+          Github::Client::ClientError.new("Not found", status_code: 404, response_body: "")
+        )
+
+        expect { gateway.get_repository(owner: "octocat", repo: "missing") }.to raise_error(Github::Client::ClientError)
+      end
+    end
+
+    context "when client raises ClientError (403 - private repo)" do
+      it "propagates the error" do
+        allow(client).to receive(:get_repository).and_raise(
+          Github::Client::ClientError.new("Forbidden", status_code: 403, response_body: "")
+        )
+
+        expect { gateway.get_repository(owner: "octocat", repo: "private-repo") }.to raise_error(Github::Client::ClientError)
+      end
+    end
+
+    context "when client raises RateLimitError" do
+      it "propagates the error" do
+        allow(client).to receive(:get_repository).and_raise(
+          Github::Client::RateLimitError.new("Rate limit exceeded", status_code: 429, response_body: "")
+        )
+
+        expect { gateway.get_repository(owner: "octocat", repo: "Hello-World") }.to raise_error(Github::Client::RateLimitError)
+      end
+    end
+
+    context "when client raises ServerError" do
+      it "propagates the error" do
+        allow(client).to receive(:get_repository).and_raise(
+          Github::Client::ServerError.new("Server error", status_code: 500, response_body: "")
+        )
+
+        expect { gateway.get_repository(owner: "octocat", repo: "Hello-World") }.to raise_error(Github::Client::ServerError)
+      end
+    end
+  end
 end

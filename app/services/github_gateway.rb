@@ -11,6 +11,10 @@ class GithubGateway
     client.get_user(username: username)
   end
 
+  def get_repository(owner:, repo:)
+    client.get_repository(owner: owner, repo: repo)
+  end
+
   private
 
   attr_reader :client
