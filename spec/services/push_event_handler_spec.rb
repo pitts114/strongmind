@@ -18,6 +18,28 @@ RSpec.describe PushEventHandler do
   end
 
   describe "#call" do
+    describe "logging" do
+      let(:push_event) { instance_double(GithubPushEvent) }
+
+      before do
+        allow(Rails.logger).to receive(:info)
+        allow_any_instance_of(PushEventSaver).to receive(:call).and_return(push_event)
+        allow_any_instance_of(PushEventRelatedFetchesEnqueuer).to receive(:call)
+      end
+
+      it "logs when starting to process an event" do
+        handler.call(event_data: event_data)
+
+        expect(Rails.logger).to have_received(:info).with("PushEventHandler: Processing event - event_id: 7401144939")
+      end
+
+      it "logs when event is processed successfully" do
+        handler.call(event_data: event_data)
+
+        expect(Rails.logger).to have_received(:info).with("PushEventHandler: Event processed successfully - event_id: 7401144939")
+      end
+    end
+
     it "calls PushEventSaver with event data" do
       saver = instance_double(PushEventSaver)
       enqueuer = instance_double(PushEventRelatedFetchesEnqueuer)

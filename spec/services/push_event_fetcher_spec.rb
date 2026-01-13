@@ -9,6 +9,52 @@ RSpec.describe PushEventFetcher do
   end
 
   describe "#call" do
+    describe "logging" do
+      before do
+        allow(Rails.logger).to receive(:info)
+      end
+
+      context "when events are fetched successfully" do
+        let(:events) do
+          [
+            { "id" => "1", "type" => "PushEvent" },
+            { "id" => "2", "type" => "WatchEvent" },
+            { "id" => "3", "type" => "PushEvent" }
+          ]
+        end
+
+        before do
+          allow(gateway).to receive(:list_public_events).and_return(events)
+        end
+
+        it "logs the start of the fetch" do
+          fetcher.call
+
+          expect(Rails.logger).to have_received(:info).with("PushEventFetcher: Fetching public events from GitHub API")
+        end
+
+        it "logs the number of events received and filtered" do
+          fetcher.call
+
+          expect(Rails.logger).to have_received(:info).with("PushEventFetcher: Received 3 events, filtered to 2 push events")
+        end
+      end
+
+      context "when NotModifiedError is raised" do
+        before do
+          allow(gateway).to receive(:list_public_events).and_raise(
+            Github::Client::NotModifiedError.new("Not modified", status_code: 304)
+          )
+        end
+
+        it "logs that no new events were available" do
+          fetcher.call
+
+          expect(Rails.logger).to have_received(:info).with("PushEventFetcher: No new events (304 Not Modified)")
+        end
+      end
+    end
+
     context "when events are successfully fetched" do
       it "returns only PushEvent events" do
         events = [

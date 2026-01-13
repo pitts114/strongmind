@@ -4,6 +4,54 @@ RSpec.describe PushEventSaver do
   let(:saver) { described_class.new }
 
   describe "#call" do
+    describe "logging" do
+      before do
+        allow(Rails.logger).to receive(:info)
+      end
+
+      context "when saving a new event" do
+        let(:event_data) do
+          {
+            "id" => "7401144939",
+            "actor" => { "id" => 178611968, "login" => "octocat" },
+            "repo" => { "name" => "octocat/hello-world" },
+            "payload" => { "repository_id" => 1113957516 }
+          }
+        end
+
+        it "logs the save with new: true" do
+          saver.call(event_data: event_data)
+
+          expect(Rails.logger).to have_received(:info).with(
+            "PushEventSaver: Saved event - event_id: 7401144939, actor: octocat, repo: octocat/hello-world, new: true"
+          )
+        end
+      end
+
+      context "when saving an existing event" do
+        let(:event_data) do
+          {
+            "id" => "7401144939",
+            "actor" => { "id" => 178611968, "login" => "octocat" },
+            "repo" => { "name" => "octocat/hello-world" },
+            "payload" => { "repository_id" => 1113957516 }
+          }
+        end
+
+        before do
+          GithubPushEvent.create!(id: "7401144939", repository_id: 999)
+        end
+
+        it "logs the save with new: false" do
+          saver.call(event_data: event_data)
+
+          expect(Rails.logger).to have_received(:info).with(
+            "PushEventSaver: Saved event - event_id: 7401144939, actor: octocat, repo: octocat/hello-world, new: false"
+          )
+        end
+      end
+    end
+
     context "when event data is valid" do
       let(:event_data) do
         {

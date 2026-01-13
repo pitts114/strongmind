@@ -4,6 +4,57 @@ RSpec.describe FetchAndEnqueuePushEventsService do
   let(:service) { described_class.new }
 
   describe "#call" do
+    describe "logging" do
+      let(:events) do
+        [
+          { "id" => "1", "type" => "PushEvent" },
+          { "id" => "2", "type" => "PushEvent" }
+        ]
+      end
+
+      before do
+        allow(service).to receive(:fetch_events).and_return(events)
+        allow(HandlePushEventJob).to receive(:perform_later)
+        allow(Rails.logger).to receive(:info)
+      end
+
+      it "logs the start of the fetch cycle" do
+        service.call
+
+        expect(Rails.logger).to have_received(:info).with("FetchAndEnqueuePushEventsService: Starting fetch cycle")
+      end
+
+      it "logs the number of events fetched" do
+        service.call
+
+        expect(Rails.logger).to have_received(:info).with("FetchAndEnqueuePushEventsService: Fetched 2 push events")
+      end
+
+      it "logs the number of jobs enqueued" do
+        service.call
+
+        expect(Rails.logger).to have_received(:info).with("FetchAndEnqueuePushEventsService: Enqueued 2 HandlePushEventJob jobs")
+      end
+
+      context "when no events are fetched" do
+        before do
+          allow(service).to receive(:fetch_events).and_return([])
+        end
+
+        it "logs zero events fetched" do
+          service.call
+
+          expect(Rails.logger).to have_received(:info).with("FetchAndEnqueuePushEventsService: Fetched 0 push events")
+        end
+
+        it "logs zero jobs enqueued" do
+          service.call
+
+          expect(Rails.logger).to have_received(:info).with("FetchAndEnqueuePushEventsService: Enqueued 0 HandlePushEventJob jobs")
+        end
+      end
+    end
+
     context "when events are fetched" do
       let(:events) do
         [

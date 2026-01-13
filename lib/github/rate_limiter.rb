@@ -33,6 +33,10 @@ module Github
       remaining = rate_limit_data["remaining"].to_i
       reset_time = rate_limit_data["reset"].to_i
 
+      # Log rate limit status at debug level
+      reset_at = Time.at(reset_time).utc.iso8601
+      Rails.logger.debug("Github::RateLimiter: Rate limit status - remaining: #{remaining}, reset_at: #{reset_at}")
+
       # If we have remaining requests, allow the request
       return if remaining > 0
 
@@ -41,7 +45,9 @@ module Github
 
       # Sleep if we need to wait for reset
       if sleep_duration > 0
+        Rails.logger.warn("Github::RateLimiter: Rate limit exhausted, sleeping for #{sleep_duration} seconds until #{reset_at}")
         sleep(sleep_duration)
+        Rails.logger.info("Github::RateLimiter: Rate limit reset, resuming requests")
         # Clear the stored data after reset
         clear_rate_limit_data
       end
@@ -59,6 +65,15 @@ module Github
 
       # Only store if we have all required headers
       return unless limit && remaining && reset
+
+      remaining_count = remaining.to_i
+      limit_count = limit.to_i
+
+      # Warn when rate limit is getting low (less than 10% remaining)
+      if limit_count > 0 && remaining_count < (limit_count * 0.1)
+        reset_at = Time.at(reset.to_i).utc.iso8601
+        Rails.logger.warn("Github::RateLimiter: Rate limit low - remaining: #{remaining_count}/#{limit_count}, reset_at: #{reset_at}")
+      end
 
       data = {
         "limit" => limit,
