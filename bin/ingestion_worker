@@ -1,5 +1,9 @@
 #!/usr/bin/env ruby
 
+# Disable output buffering for Docker logs
+$stdout.sync = true
+$stderr.sync = true
+
 # Load Rails environment
 require_relative "../config/environment"
 
