@@ -1,6 +1,4 @@
 require "rails_helper"
-require_relative "../../lib/github/storage"
-require_relative "../../app/storage/redis"
 
 RSpec.describe Storage::Redis do
   let(:redis) { ::Redis.new }
