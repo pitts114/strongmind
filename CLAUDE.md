@@ -885,6 +885,101 @@ gateway = GithubGateway.new
 
 ---
 
+## LocalStack S3 Setup
+
+LocalStack provides a local AWS S3-compatible storage service for development and testing. This is used for storing user avatar images without requiring real AWS credentials.
+
+### Quick Start
+
+```bash
+# Start LocalStack (along with other services)
+docker-compose up
+
+# Verify LocalStack is running
+curl http://localhost:4566/health
+```
+
+### Configuration
+
+**Docker Compose** (`docker-compose.yml`):
+- Service: `localstack`
+- Port: 4566
+- Initialization scripts: `docker/localstack/init-s3.sh`
+
+**Rails Storage** (`config/storage.yml`):
+```ruby
+localstack:
+  service: S3
+  access_key_id: test
+  secret_access_key: test
+  region: us-east-1
+  bucket: user-avatars
+  endpoint: http://localhost:4566
+  force_path_style: true
+```
+
+### S3 Buckets
+
+- **user-avatars** - Storage for GitHub user avatar images
+
+### Using LocalStack S3
+
+**Via AWS CLI (awslocal)**:
+```bash
+# List buckets
+awslocal s3 ls
+
+# Upload/download files
+awslocal s3 cp file.jpg s3://user-avatars/
+awslocal s3 cp s3://user-avatars/file.jpg ./downloaded.jpg
+```
+
+**Via Rails ActiveStorage**:
+```ruby
+# Attach a file to a model
+user = GithubUser.first
+user.avatar.attach(io: File.open('avatar.jpg'), filename: 'avatar.jpg')
+
+# Get the URL
+user.avatar.url
+```
+
+### Credentials (Development Only)
+
+LocalStack uses dummy credentials that only work locally:
+- Access Key: `test`
+- Secret Access Key: `test`
+- Region: `us-east-1`
+- Endpoint: `http://localhost:4566`
+
+### Data Persistence
+
+LocalStack data is stored in the `localstack_data` Docker volume:
+```bash
+# Keep data between restarts
+docker-compose down
+
+# Reset all LocalStack data
+docker-compose down -v
+```
+
+### Troubleshooting
+
+```bash
+# View LocalStack logs
+docker-compose logs localstack
+
+# Manually run initialization script
+docker-compose exec localstack /etc/localstack/init/ready.d/init-s3.sh
+
+# Verify bucket exists
+awslocal s3 ls
+```
+
+For detailed documentation, see `docker/localstack/README.md`.
+
+---
+
 ## Future Enhancements
 
 ### Planned (mentioned in issues/conversations):
