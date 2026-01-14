@@ -3,7 +3,7 @@ FactoryBot.define do
     sequence(:id) { |n| 100000 + n }
     sequence(:login) { |n| "user-#{n}" }
     name { "Test User" }
-    user_type { "User" }
+    add_attribute(:type) { "User" }
     site_admin { false }
     public_repos { 10 }
     followers { 100 }
