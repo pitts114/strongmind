@@ -3,7 +3,7 @@ class PushEventRelatedFetchesEnqueuer
     extractor = PushEventDataExtractor.new(event_data: event_data)
 
     enqueue_repository_fetch(extractor)
-    enqueue_user_fetch(extractor)
+    enqueue_actor_fetch(extractor)
   end
 
   private
@@ -15,9 +15,12 @@ class PushEventRelatedFetchesEnqueuer
     )
   end
 
-  def enqueue_user_fetch(extractor)
-    if extractor.actor == :user
+  def enqueue_actor_fetch(extractor)
+    case extractor.actor
+    when :user
       FetchAndSaveGithubUserJob.perform_later(extractor.actor_login)
+    when :organization
+      FetchAndSaveGithubOrganizationJob.perform_later(extractor.actor_login)
     else
       log_skipped_actor(extractor)
     end
@@ -25,7 +28,7 @@ class PushEventRelatedFetchesEnqueuer
 
   def log_skipped_actor(extractor)
     Rails.logger.info(
-      "Skipping user fetch for non-user actor - " \
+      "Skipping actor fetch for non-user/non-org actor - " \
       "Actor type: #{extractor.actor}, " \
       "Login: #{extractor.actor_login}, " \
       "URL: #{extractor.actor_url}"

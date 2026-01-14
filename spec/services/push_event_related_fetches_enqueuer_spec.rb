@@ -63,7 +63,7 @@ RSpec.describe PushEventRelatedFetchesEnqueuer do
         enqueuer.call(event_data: event_data)
 
         expect(Rails.logger).to have_received(:info).with(
-          "Skipping user fetch for non-user actor - " \
+          "Skipping actor fetch for non-user/non-org actor - " \
           "Actor type: bot, " \
           "Login: github-actions[bot], " \
           "URL: https://api.github.com/users/github-actions[bot]"
@@ -71,7 +71,7 @@ RSpec.describe PushEventRelatedFetchesEnqueuer do
       end
     end
 
-    context "when actor type is unknown" do
+    context "when actor is an organization" do
       let(:event_data) do
         {
           "actor" => {
@@ -90,10 +90,49 @@ RSpec.describe PushEventRelatedFetchesEnqueuer do
         }.to have_enqueued_job(FetchAndSaveGithubRepositoryJob)
       end
 
+      it "enqueues organization fetch job" do
+        expect {
+          enqueuer.call(event_data: event_data)
+        }.to have_enqueued_job(FetchAndSaveGithubOrganizationJob)
+          .with("github")
+      end
+
       it "does not enqueue user fetch job" do
         expect {
           enqueuer.call(event_data: event_data)
         }.not_to have_enqueued_job(FetchAndSaveGithubUserJob)
+      end
+    end
+
+    context "when actor type is unknown" do
+      let(:event_data) do
+        {
+          "actor" => {
+            "login" => "unknown-actor",
+            "url" => "https://api.github.com/something/unknown"
+          },
+          "repo" => {
+            "name" => "owner/repo"
+          }
+        }
+      end
+
+      it "enqueues repository fetch job" do
+        expect {
+          enqueuer.call(event_data: event_data)
+        }.to have_enqueued_job(FetchAndSaveGithubRepositoryJob)
+      end
+
+      it "does not enqueue user fetch job" do
+        expect {
+          enqueuer.call(event_data: event_data)
+        }.not_to have_enqueued_job(FetchAndSaveGithubUserJob)
+      end
+
+      it "does not enqueue organization fetch job" do
+        expect {
+          enqueuer.call(event_data: event_data)
+        }.not_to have_enqueued_job(FetchAndSaveGithubOrganizationJob)
       end
 
       it "logs skipped unknown actor" do
@@ -102,10 +141,10 @@ RSpec.describe PushEventRelatedFetchesEnqueuer do
         enqueuer.call(event_data: event_data)
 
         expect(Rails.logger).to have_received(:info).with(
-          "Skipping user fetch for non-user actor - " \
+          "Skipping actor fetch for non-user/non-org actor - " \
           "Actor type: unknown, " \
-          "Login: github, " \
-          "URL: https://api.github.com/orgs/github"
+          "Login: unknown-actor, " \
+          "URL: https://api.github.com/something/unknown"
         )
       end
     end

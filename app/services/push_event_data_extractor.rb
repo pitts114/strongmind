@@ -8,11 +8,17 @@ class PushEventDataExtractor
     return nil unless url
 
     # Match pattern: https://api.github.com/users/username
-    match = url.match(%r{^https?://[^/]+/users/([^/]+)$})
-    return :unknown unless match
+    user_match = url.match(%r{^https?://[^/]+/users/([^/]+)$})
+    if user_match
+      username = user_match[1]
+      return username.end_with?("[bot]") ? :bot : :user
+    end
 
-    username = match[1]
-    username.end_with?("[bot]") ? :bot : :user
+    # Match pattern: https://api.github.com/orgs/orgname
+    org_match = url.match(%r{^https?://[^/]+/orgs/([^/]+)$})
+    return :organization if org_match
+
+    :unknown
   end
 
   def actor_login

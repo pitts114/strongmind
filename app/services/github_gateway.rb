@@ -15,6 +15,10 @@ class GithubGateway
     client.get_repository(owner: owner, repo: repo)
   end
 
+  def get_organization(org:)
+    client.get_organization(org: org)
+  end
+
   private
 
   attr_reader :client

@@ -38,7 +38,7 @@ RSpec.describe PushEventDataExtractor do
       expect(extractor.actor).to eq(:bot)
     end
 
-    it "returns :unknown for actors with /orgs/ URL" do
+    it "returns :organization for actors with /orgs/ URL" do
       event_data = {
         "actor" => {
           "login" => "github",
@@ -47,7 +47,7 @@ RSpec.describe PushEventDataExtractor do
       }
       extractor = described_class.new(event_data: event_data)
 
-      expect(extractor.actor).to eq(:unknown)
+      expect(extractor.actor).to eq(:organization)
     end
 
     it "returns :unknown for malformed URLs" do

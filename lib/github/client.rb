@@ -89,6 +89,16 @@ module Github
       execute_request(endpoint: "/repos/#{owner}/#{repo}")
     end
 
+    # Fetch a specific GitHub organization by login
+    # @param org [String] GitHub organization login (e.g., "github")
+    # @return [Hash] Organization data hash
+    # @raise [RateLimitError] when rate limit is exceeded (legacy - now we sleep instead)
+    # @raise [ServerError] on server errors or network failures
+    # @raise [ClientError] on client errors (e.g., 404 organization not found)
+    def get_organization(org:)
+      execute_request(endpoint: "/orgs/#{org}")
+    end
+
     private
 
     # Execute an API request with rate limiting and error handling
