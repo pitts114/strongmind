@@ -442,6 +442,90 @@ HandlePushEventJob retries due to deadlock:
 
 ---
 
+## Avoiding Duplicate Fetches
+
+While duplicate jobs may be enqueued (see "Idempotency Guarantees" above), the system prevents unnecessary API calls by checking data staleness before fetching.
+
+### Fetch Guard Strategy
+
+Both `GithubUserFetcher` and `GithubRepositoryFetcher` use fetch guard services to determine if a fetch is needed:
+
+```ruby
+class GithubUserFetcher
+  def initialize(gateway: GithubGateway.new, fetch_guard: GithubUserFetchGuard.new)
+    @gateway = gateway
+    @fetch_guard = fetch_guard
+  end
+
+  def call(username:)
+    # Returns existing record if fetch not needed, nil if fetch is needed
+    if (user = fetch_guard.find_unless_fetch_needed(identifier: username))
+      Rails.logger.info("Skipping fetch - fetch not needed")
+      return user
+    end
+
+    fetch_and_save(username)
+  end
+end
+```
+
+**How it works:**
+1. Fetch guard queries for record with `updated_at` within threshold (single query)
+2. If record exists and fetch is not needed, return it immediately (no API call)
+3. If fetch is needed (stale or missing), fetch from GitHub API
+
+**Fetch Guard Architecture:**
+- `FetchGuard` - Shared concern with `find_unless_fetch_needed` method and default staleness threshold
+- `GithubUserFetchGuard` - Implements `find_fresh_record` to query by `login`
+- `GithubRepositoryFetchGuard` - Implements `find_fresh_record` to query by `full_name`
+
+Each implementation provides its own `find_fresh_record(identifier:, threshold:)` method, giving full control over how records are looked up (single attribute, multiple attributes, complex queries, etc.).
+
+**Extensibility:** The fetch guard abstraction can be extended to check additional conditions:
+- In-flight tracking (another job is already fetching this resource)
+- Backoff/circuit breaker (recently failed, don't retry yet)
+- Permanent skip (known deleted/private resource)
+
+**Configurable staleness threshold:**
+- `STALENESS_THRESHOLD_MINUTES` (default: 5) - How long before data is considered stale
+- Set to `0` to always fetch (disable caching)
+- Individual fetch guards can override this by implementing their own `staleness_threshold_minutes` method
+
+**Database indexes:**
+- `github_users.login` - Indexed for fast staleness lookups
+- `github_repositories.full_name` - Indexed for fast staleness lookups
+
+### Benefits
+
+1. **Reduces API calls** - The scarce resource (5,000/hour limit)
+2. **Reduces GitHub API load** - Good API citizenship
+3. **Faster job execution** - DB query is much faster than API call
+4. **Configurable** - Tune staleness threshold based on needs
+5. **Testable** - Fetch guards can be mocked in fetcher tests
+6. **Extensible** - Can add more checks (in-flight, backoff) without changing fetchers
+
+### Race Conditions
+
+**Possible scenario:** Two jobs start simultaneously, both see stale data, both fetch.
+
+**Impact:**
+- Rare (window is milliseconds)
+- Wastes 1 extra API call
+- Data correctness maintained (idempotent savers)
+- Acceptable trade-off for simplicity
+
+**Why not Redis locks?** Fetch guards solve the actual problem (API calls) with minimal complexity. Redis locks add dependencies and edge cases (orphaned locks, TTL tuning) for marginal benefit.
+
+**Future enhancements (if needed):** If the rare race condition becomes problematic, consider extending the fetch guard to include:
+- **Redis-based in-flight tracking** - Use `SET NX` for atomic lock acquisition to prevent concurrent fetches
+- **sidekiq-unique-jobs gem** - Add job-level deduplication with `lock: :while_executing` strategy
+- **Enqueue-time fetch guard check** - Add duplicate check in `PushEventRelatedFetchesEnqueuer` to reduce queue size
+- **Hybrid approach** - Combine multiple strategies for defense-in-depth
+
+Each adds complexity and dependencies, so only implement if metrics show the race condition is causing issues. The `FetchGuard` abstraction makes it easy to add these checks without changing the fetcher services.
+
+---
+
 ## Separation of Concerns: Fetcher vs Saver
 
 Services are split into distinct responsibilities following SOLID principles:
@@ -794,6 +878,7 @@ gateway = GithubGateway.new
 |----------|---------|-------------|
 | `INGESTION_POLL_INTERVAL` | `60` | Seconds between GitHub API fetch cycles |
 | `JOB_CONCURRENCY` | `1` | Number of Solid Queue worker processes |
+| `STALENESS_THRESHOLD_MINUTES` | `5` | Minutes before data is considered stale (triggers re-fetch) |
 | `REDIS_URL` | - | Redis connection URL for rate limiting storage |
 | `GITHUB_TOKEN` | - | Optional: GitHub API token for higher rate limits |
 | `RAILS_MASTER_KEY` | - | Rails credentials encryption key |
@@ -843,19 +928,20 @@ gateway = GithubGateway.new
 - Future divergence (user profile pictures, repo webhooks, etc.)
 - Clearer job names in background worker UI
 
-### Why Always Fetch Instead of Conditional?
+### Why Fetch Guards?
 
-**Problem:** Should we check if data is recent before fetching?
+**Problem:** Multiple push events for the same user/repo would trigger redundant API calls.
 
-**Solution:** Always fetch from API (for now).
+**Solution:** Use fetch guards to determine if a fetch is needed. Currently checks staleness, but can be extended to check other conditions.
 
 **Benefits:**
-- Simpler implementation
-- Always have fresh data
-- No stale data bugs
-- Can add conditional logic later if needed
+- Reduces API calls (the scarce resource: 5,000/hour)
+- Faster job execution (DB query vs API call)
+- Configurable per resource type via environment variables
+- Fetch guards are injectable for easy testing
+- Extensible - can add in-flight tracking, backoff, etc. without changing fetchers
 
-**Trade-off:** Uses more API quota, but we're far from limits.
+**Trade-off:** Data may be slightly stale (up to threshold minutes old), but this is acceptable for most use cases.
 
 ### Why Separate Fetcher and Saver Services?
 
@@ -890,7 +976,7 @@ gateway = GithubGateway.new
 ### Planned (mentioned in issues/conversations):
 - [ ] User profile picture fetching and upload to object storage
 - [ ] GitHub organization fetching
-- [ ] Conditional fetching based on data age
+- [x] Conditional fetching based on data age (implemented via staleness checkers)
 
 ### Potential Improvements:
 - [ ] Add webhook support instead of polling
@@ -908,4 +994,4 @@ For questions about this project, refer to:
 - Existing code patterns (services and tests)
 - This document
 
-**Last Updated:** January 13, 2026
+**Last Updated:** January 14, 2026
