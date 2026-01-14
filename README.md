@@ -12,11 +12,62 @@
    bundle install
    ```
 
+3. **Start Docker Services**
+   ```bash
+   # Start PostgreSQL, Redis, and LocalStack
+   docker compose up -d
+   ```
+
+   This starts:
+   - **PostgreSQL** (port 5432) - Database
+   - **Redis** (port 6379) - Rate limiting storage
+   - **LocalStack** (port 4566) - AWS service emulator (S3, and other AWS services)
+     - S3 endpoint: http://localhost:4566
+     - Buckets: `strongmind-avatars-dev` and `strongmind-avatars-test` are auto-created
+
 ## Server
 `bundle exec rails server`
 
 ## Sidekiq
 `bundle exec sidekiq`
+
+## LocalStack (AWS Emulator)
+
+LocalStack provides a local AWS cloud stack for development. Currently configured to emulate S3 for storing user avatars and other uploaded files.
+
+**S3 Endpoint:**
+- URL: http://localhost:4566
+- Access Key: `test`
+- Secret Key: `test`
+- Region: `us-east-1`
+
+**Buckets:**
+- `strongmind-avatars-dev` - Development environment
+- `strongmind-avatars-test` - Test environment
+
+Both buckets are configured with public-read access for easy avatar URL access.
+
+**Using LocalStack in Rails:**
+
+To use LocalStack instead of local disk storage, set the active storage service in your environment:
+
+```ruby
+# config/environments/development.rb
+config.active_storage.service = :localstack  # instead of :local
+```
+
+**Testing LocalStack S3:**
+
+```bash
+# List buckets
+aws --endpoint-url=http://localhost:4566 s3 ls
+
+# Upload a file
+aws --endpoint-url=http://localhost:4566 s3 cp test.jpg s3://strongmind-avatars-dev/
+
+# List files in bucket
+aws --endpoint-url=http://localhost:4566 s3 ls s3://strongmind-avatars-dev/
+```
 
 # Production Deployment with Docker Compose
 

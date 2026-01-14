@@ -6,6 +6,16 @@ local:
   service: Disk
   root: <%= Rails.root.join("storage") %>
 
+# LocalStack configuration for local development (AWS emulator)
+localstack:
+  service: S3
+  access_key_id: <%= ENV.fetch("AWS_ACCESS_KEY_ID", "test") %>
+  secret_access_key: <%= ENV.fetch("AWS_SECRET_ACCESS_KEY", "test") %>
+  region: <%= ENV.fetch("AWS_REGION", "us-east-1") %>
+  bucket: <%= ENV.fetch("S3_BUCKET", "strongmind-avatars-#{Rails.env}") %>
+  endpoint: <%= ENV.fetch("AWS_ENDPOINT_URL", "http://localhost:4566") %>
+  force_path_style: true
+
 # Use bin/rails credentials:edit to set the AWS secrets (as aws:access_key_id|secret_access_key)
 # amazon:
 #   service: S3
