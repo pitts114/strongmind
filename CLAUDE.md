@@ -15,6 +15,72 @@ This is a GitHub event ingestion system that:
 
 ---
 
+## Environment Setup for Claude Code in the Cloud
+
+**IMPORTANT**: Before running any Rails commands or tests, you MUST ensure the correct Ruby version and bundler are installed.
+
+### Required Versions
+- **Ruby**: `3.4.4` (specified in `.ruby-version`)
+- **Bundler**: `2.7.1` (specified in `Gemfile.lock`)
+
+### Setup Steps
+
+When working in Claude Code cloud environment, follow these steps in order:
+
+1. **Install Ruby 3.4.4 using rbenv**
+   ```bash
+   # Install the required Ruby version
+   rbenv install 3.4.4
+
+   # Set it as the local version for this project
+   rbenv local 3.4.4
+
+   # Verify Ruby version
+   ruby -v  # Should show: ruby 3.4.4
+   ```
+
+2. **Install the correct Bundler version**
+   ```bash
+   # Install bundler 2.7.1 (matches Gemfile.lock)
+   gem install bundler -v 2.7.1
+
+   # Verify bundler version
+   bundle -v  # Should show: Bundler version 2.7.1
+   ```
+
+3. **Install project dependencies**
+   ```bash
+   # Install all gems
+   bundle install
+   ```
+
+### Troubleshooting
+
+**If `rbenv install 3.4.4` fails:**
+- The cloud environment should have rbenv pre-installed
+- If Ruby 3.4.4 is not available, it may need to be compiled from source
+- Check rbenv is in PATH: `which rbenv`
+
+**If `bundle install` fails with version mismatch:**
+- Ensure you're using bundler 2.7.1: `bundle -v`
+- Try: `gem install bundler:2.7.1 && bundle _2.7.1_ install`
+
+**If you see "Ruby version mismatch" errors:**
+- Verify: `ruby -v` shows 3.4.4
+- Run: `rbenv rehash` to refresh rbenv shims
+- Check: `which ruby` points to rbenv's Ruby, not system Ruby
+
+### Quick Verification
+
+After setup, verify everything is correct:
+```bash
+ruby -v        # Should show: ruby 3.4.4
+bundle -v      # Should show: Bundler version 2.7.1
+bundle check   # Should show: The Gemfile's dependencies are satisfied
+```
+
+---
+
 ## Core Architecture Patterns
 
 ### 1. Service Objects Pattern
