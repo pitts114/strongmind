@@ -1,16 +1,18 @@
 class GithubRepositoryFetcher
-  def initialize(gateway: GithubGateway.new)
+  def initialize(gateway: GithubGateway.new, fetch_guard: GithubRepositoryFetchGuard.new)
     @gateway = gateway
+    @fetch_guard = fetch_guard
   end
 
   def call(owner:, repo:)
-    Rails.logger.info("Fetching GitHub repository: #{owner}/#{repo}")
+    full_name = "#{owner}/#{repo}"
 
-    repo_data = gateway.get_repository(owner: owner, repo: repo)
-    result = GithubRepositorySaver.new.call(repository_data: repo_data)
+    if (repository = fetch_guard.find_unless_fetch_needed(identifier: full_name))
+      Rails.logger.info("Skipping fetch for repository #{full_name} - fetch not needed (last updated: #{repository.updated_at})")
+      return repository
+    end
 
-    Rails.logger.info("Saved GitHub repository: #{owner}/#{repo} (ID: #{result.id})")
-    result
+    fetch_and_save(owner, repo)
   rescue Github::Client::ServerError => e
     Rails.logger.warn("GithubRepositoryFetcher: Server error - repo: #{owner}/#{repo}, error: #{e.message}")
     raise
@@ -24,5 +26,15 @@ class GithubRepositoryFetcher
 
   private
 
-  attr_reader :gateway
+  attr_reader :gateway, :fetch_guard
+
+  def fetch_and_save(owner, repo)
+    Rails.logger.info("Fetching GitHub repository: #{owner}/#{repo}")
+
+    repo_data = gateway.get_repository(owner: owner, repo: repo)
+    result = GithubRepositorySaver.new.call(repository_data: repo_data)
+
+    Rails.logger.info("Saved GitHub repository: #{owner}/#{repo} (ID: #{result.id})")
+    result
+  end
 end

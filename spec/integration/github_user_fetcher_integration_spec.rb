@@ -39,6 +39,10 @@ RSpec.describe "GithubUserFetcher Integration" do
   end
 
   describe "idempotency - updating existing user" do
+    # Inject a fetch guard that always triggers a fetch
+    let(:fetch_guard) { instance_double(GithubUserFetchGuard, find_unless_fetch_needed: nil) }
+    let(:fetcher) { GithubUserFetcher.new(gateway: gateway, fetch_guard: fetch_guard) }
+
     let(:initial_data) { build(:user_api_response, login: "octocat", user_id: 583231) }
     let(:updated_data) do
       build(:user_api_response, login: "octocat", user_id: 583231).merge(

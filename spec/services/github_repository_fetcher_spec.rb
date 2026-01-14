@@ -2,10 +2,11 @@ require "rails_helper"
 
 RSpec.describe GithubRepositoryFetcher do
   let(:gateway) { instance_double(GithubGateway) }
-  let(:fetcher) { described_class.new(gateway: gateway) }
+  let(:fetch_guard) { instance_double(GithubRepositoryFetchGuard) }
+  let(:fetcher) { described_class.new(gateway: gateway, fetch_guard: fetch_guard) }
 
   describe "#call" do
-    context "when repository exists" do
+    context "when fetch is needed" do
       let(:repo_data) do
         {
           "id" => 1296269,
@@ -18,7 +19,11 @@ RSpec.describe GithubRepositoryFetcher do
         }
       end
 
-      it "fetches repository data and calls GithubRepositorySaver" do
+      before do
+        allow(fetch_guard).to receive(:find_unless_fetch_needed).with(identifier: "octocat/Hello-World").and_return(nil)
+      end
+
+      it "fetches repository data from API and saves it" do
         saver = instance_double(GithubRepositorySaver)
         saved_repo = instance_double(GithubRepository, id: 1296269, full_name: "octocat/Hello-World")
 
@@ -34,7 +39,32 @@ RSpec.describe GithubRepositoryFetcher do
       end
     end
 
+    context "when fetch is not needed" do
+      let(:existing_repo) { instance_double(GithubRepository, updated_at: 2.minutes.ago) }
+
+      before do
+        allow(fetch_guard).to receive(:find_unless_fetch_needed).with(identifier: "octocat/Hello-World").and_return(existing_repo)
+        allow(gateway).to receive(:get_repository)
+      end
+
+      it "returns existing repository without calling API" do
+        allow(Rails.logger).to receive(:info)
+
+        result = fetcher.call(owner: "octocat", repo: "Hello-World")
+
+        expect(result).to eq(existing_repo)
+        expect(gateway).not_to have_received(:get_repository)
+        expect(Rails.logger).to have_received(:info).with(
+          match(/Skipping fetch for repository octocat\/Hello-World - fetch not needed/)
+        )
+      end
+    end
+
     context "when repository is private (403)" do
+      before do
+        allow(fetch_guard).to receive(:find_unless_fetch_needed).and_return(nil)
+      end
+
       it "raises Github::Client::ClientError" do
         allow(gateway).to receive(:get_repository).and_raise(
           Github::Client::ClientError.new("Forbidden", status_code: 403, response_body: "")
@@ -46,6 +76,10 @@ RSpec.describe GithubRepositoryFetcher do
     end
 
     context "when repository is deleted (404)" do
+      before do
+        allow(fetch_guard).to receive(:find_unless_fetch_needed).and_return(nil)
+      end
+
       it "raises Github::Client::ClientError" do
         allow(gateway).to receive(:get_repository).and_raise(
           Github::Client::ClientError.new("Not Found", status_code: 404, response_body: "")
@@ -57,6 +91,10 @@ RSpec.describe GithubRepositoryFetcher do
     end
 
     context "when server error occurs" do
+      before do
+        allow(fetch_guard).to receive(:find_unless_fetch_needed).and_return(nil)
+      end
+
       it "raises Github::Client::ServerError" do
         allow(gateway).to receive(:get_repository).and_raise(
           Github::Client::ServerError.new("502 Bad Gateway", status_code: 502, response_body: "")
@@ -68,6 +106,10 @@ RSpec.describe GithubRepositoryFetcher do
     end
 
     context "when rate limited" do
+      before do
+        allow(fetch_guard).to receive(:find_unless_fetch_needed).and_return(nil)
+      end
+
       it "raises Github::Client::RateLimitError" do
         allow(gateway).to receive(:get_repository).and_raise(
           Github::Client::RateLimitError.new("Rate limit", status_code: 429, response_body: "")
@@ -81,6 +123,7 @@ RSpec.describe GithubRepositoryFetcher do
 
   describe "error logging" do
     before do
+      allow(fetch_guard).to receive(:find_unless_fetch_needed).and_return(nil)
       allow(Rails.logger).to receive(:info)
       allow(Rails.logger).to receive(:warn)
     end
