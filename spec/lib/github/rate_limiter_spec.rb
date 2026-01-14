@@ -5,7 +5,8 @@ require_relative "../../../lib/github/rate_limiter"
 
 RSpec.describe Github::RateLimiter do
   let(:storage) { Github::Storage::Memory.new }
-  let(:rate_limiter) { described_class.new(storage: storage) }
+  let(:max_concurrent_requests) { 3 }
+  let(:rate_limiter) { described_class.new(storage: storage, max_concurrent_requests: max_concurrent_requests) }
   let(:logger) { instance_double(Logger, debug: nil, info: nil, warn: nil) }
 
   before do
@@ -206,6 +207,116 @@ RSpec.describe Github::RateLimiter do
 
       expect { rate_limiter.record_limit(headers) }.not_to raise_error
       expect(storage.get("github:rate_limit:core")).to be_nil
+    end
+  end
+
+  describe "concurrent request limiting" do
+    describe "#acquire_slot" do
+      it "acquires a slot when under the limit" do
+        rate_limiter.acquire_slot
+        expect(storage.get("github:concurrent_requests:core").to_i).to eq(1)
+      end
+
+      it "allows multiple slots up to the limit" do
+        rate_limiter.acquire_slot
+        rate_limiter.acquire_slot
+        rate_limiter.acquire_slot
+        expect(storage.get("github:concurrent_requests:core").to_i).to eq(3)
+      end
+
+      it "blocks when limit is reached" do
+        # Fill all slots
+        3.times { rate_limiter.acquire_slot }
+
+        # Try to acquire one more - should block
+        expect(rate_limiter).to receive(:sleep).with(described_class::CONCURRENT_SLOT_POLL_INTERVAL).at_least(:once)
+
+        # Simulate another thread releasing a slot after first sleep
+        allow(rate_limiter).to receive(:sleep) do
+          storage.decrement("github:concurrent_requests:core")
+        end
+
+        rate_limiter.acquire_slot
+      end
+
+      it "logs when acquiring a slot" do
+        rate_limiter.acquire_slot
+        expect(logger).to have_received(:debug).with(/Acquired concurrent request slot \(1\/3\)/)
+      end
+
+      it "logs when waiting for a slot" do
+        # Fill all slots
+        3.times { rate_limiter.acquire_slot }
+
+        # Mock sleep to prevent actual blocking
+        allow(rate_limiter).to receive(:sleep) do
+          storage.decrement("github:concurrent_requests:core")
+        end
+
+        rate_limiter.acquire_slot
+        expect(logger).to have_received(:debug).with(/Concurrent request limit reached, waiting for available slot/)
+      end
+    end
+
+    describe "#release_slot" do
+      it "releases a slot" do
+        rate_limiter.acquire_slot
+        rate_limiter.release_slot
+        expect(storage.get("github:concurrent_requests:core").to_i).to eq(0)
+      end
+
+      it "doesn't go below zero" do
+        rate_limiter.release_slot
+        expect(storage.get("github:concurrent_requests:core").to_i).to eq(0)
+      end
+
+      it "logs when releasing a slot" do
+        rate_limiter.acquire_slot
+        rate_limiter.release_slot
+        expect(logger).to have_received(:debug).with(/Released concurrent request slot \(0\/3\)/)
+      end
+    end
+
+    describe "thread safety" do
+      it "handles concurrent acquire and release safely" do
+        threads = 10.times.map do
+          Thread.new do
+            20.times do
+              rate_limiter.acquire_slot
+              sleep(0.001)  # Simulate work
+              rate_limiter.release_slot
+            end
+          end
+        end
+
+        threads.each(&:join)
+
+        # All slots should be released
+        expect(storage.get("github:concurrent_requests:core").to_i).to eq(0)
+      end
+
+      it "never exceeds the concurrent request limit" do
+        max_observed = 0
+        mutex = Mutex.new
+
+        threads = 10.times.map do
+          Thread.new do
+            20.times do
+              rate_limiter.acquire_slot
+
+              current = storage.get("github:concurrent_requests:core").to_i
+              mutex.synchronize { max_observed = [ max_observed, current ].max }
+
+              sleep(0.001)  # Simulate work
+              rate_limiter.release_slot
+            end
+          end
+        end
+
+        threads.each(&:join)
+
+        expect(max_observed).to be <= max_concurrent_requests
+      end
     end
   end
 end

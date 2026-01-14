@@ -12,14 +12,22 @@ module Github
     # Minimum sleep time when rate limited (seconds)
     MIN_SLEEP = 1
 
-    attr_reader :storage, :resource
+    # Default maximum concurrent requests (GitHub allows 100, we use 10 to be conservative)
+    DEFAULT_MAX_CONCURRENT_REQUESTS = 10
+
+    # Sleep interval when waiting for a concurrent request slot (seconds)
+    CONCURRENT_SLOT_POLL_INTERVAL = 0.1
+
+    attr_reader :storage, :resource, :max_concurrent_requests
 
     # Initialize rate limiter with storage backend
     # @param storage [Github::Storage::Interface] Storage backend implementation
     # @param resource [String] GitHub resource type (default: "core")
-    def initialize(storage:, resource: DEFAULT_RESOURCE)
+    # @param max_concurrent_requests [Integer] Maximum concurrent requests allowed (default: 10)
+    def initialize(storage:, resource: DEFAULT_RESOURCE, max_concurrent_requests: DEFAULT_MAX_CONCURRENT_REQUESTS)
       @storage = storage
       @resource = resource
+      @max_concurrent_requests = max_concurrent_requests
     end
 
     # Check rate limit before making a request
@@ -51,6 +59,34 @@ module Github
         # Clear the stored data after reset
         clear_rate_limit_data
       end
+    end
+
+    # Acquire a concurrent request slot
+    # Will block/wait if maximum concurrent requests are already in flight
+    # @return [void]
+    def acquire_slot
+      loop do
+        current = storage.increment(concurrent_requests_key)
+
+        if current <= max_concurrent_requests
+          # Successfully acquired a slot
+          Rails.logger.debug("Github::RateLimiter: Acquired concurrent request slot (#{current}/#{max_concurrent_requests})")
+          return
+        else
+          # Too many concurrent requests, release the slot we just took and wait
+          storage.decrement(concurrent_requests_key)
+          Rails.logger.debug("Github::RateLimiter: Concurrent request limit reached, waiting for available slot (#{max_concurrent_requests} max)")
+          sleep(CONCURRENT_SLOT_POLL_INTERVAL)
+        end
+      end
+    end
+
+    # Release a concurrent request slot
+    # Should be called after a request completes (success or failure)
+    # @return [void]
+    def release_slot
+      current = storage.decrement(concurrent_requests_key)
+      Rails.logger.debug("Github::RateLimiter: Released concurrent request slot (#{current}/#{max_concurrent_requests})")
     end
 
     # Record rate limit information from response headers
@@ -156,6 +192,12 @@ module Github
     # @return [String] Storage key
     def storage_key
       "github:rate_limit:#{resource}"
+    end
+
+    # Generate storage key for concurrent requests counter
+    # @return [String] Storage key
+    def concurrent_requests_key
+      "github:concurrent_requests:#{resource}"
     end
   end
 end

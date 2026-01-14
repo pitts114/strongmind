@@ -25,6 +25,22 @@ module Github
       def delete(key)
         raise NotImplementedError, "#{self.class} must implement #delete"
       end
+
+      # Atomically increment a counter
+      # @param key [String] The storage key
+      # @param amount [Integer] Amount to increment by (default: 1)
+      # @return [Integer] The new value after incrementing
+      def increment(key, amount: 1)
+        raise NotImplementedError, "#{self.class} must implement #increment"
+      end
+
+      # Atomically decrement a counter
+      # @param key [String] The storage key
+      # @param amount [Integer] Amount to decrement by (default: 1)
+      # @return [Integer] The new value after decrementing
+      def decrement(key, amount: 1)
+        raise NotImplementedError, "#{self.class} must implement #decrement"
+      end
     end
   end
 end

@@ -42,12 +42,14 @@ module Github
     # @param timeout [Integer] Request timeout in seconds
     # @param storage [Github::Storage::Interface, nil] Storage backend for rate limiting
     # @param rate_limit_resource [String] GitHub resource type for rate limiting
+    # @param max_concurrent_requests [Integer] Maximum concurrent requests allowed
     def initialize(
       base_url: DEFAULT_BASE_URL,
       api_version: DEFAULT_API_VERSION,
       timeout: DEFAULT_TIMEOUT,
       storage: Storage::Memory.new,
-      rate_limit_resource: RateLimiter::DEFAULT_RESOURCE
+      rate_limit_resource: RateLimiter::DEFAULT_RESOURCE,
+      max_concurrent_requests: RateLimiter::DEFAULT_MAX_CONCURRENT_REQUESTS
     )
       @base_url = base_url
       @api_version = api_version
@@ -55,7 +57,8 @@ module Github
 
       @rate_limiter = RateLimiter.new(
         storage: storage,
-        resource: rate_limit_resource
+        resource: rate_limit_resource,
+        max_concurrent_requests: max_concurrent_requests
       )
     end
 
@@ -102,12 +105,20 @@ module Github
       # Check rate limit before making request (may sleep)
       rate_limiter.check_limit
 
-      response = make_request(endpoint: endpoint)
+      # Acquire a concurrent request slot (may block if limit reached)
+      rate_limiter.acquire_slot
 
-      # Record rate limit info from response
-      rate_limiter.record_limit(response.to_hash)
+      begin
+        response = make_request(endpoint: endpoint)
 
-      handle_response(response: response)
+        # Record rate limit info from response
+        rate_limiter.record_limit(response.to_hash)
+
+        handle_response(response: response)
+      ensure
+        # Always release the slot, even if request fails
+        rate_limiter.release_slot
+      end
     rescue Timeout::Error, Errno::ECONNREFUSED, Errno::ECONNRESET, SocketError => e
       raise ServerError.new("Network error: #{e.message}")
     rescue JSON::ParserError => e

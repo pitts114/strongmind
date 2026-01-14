@@ -59,6 +59,42 @@ module Github
           @store.clear
         end
       end
+
+      # Atomically increment a counter
+      # @param key [String] The storage key
+      # @param amount [Integer] Amount to increment by (default: 1)
+      # @return [Integer] The new value after incrementing
+      def increment(key, amount: 1)
+        @monitor.synchronize do
+          current = get_counter_value(key)
+          new_value = current + amount
+          @store[key] = { value: new_value.to_s, expires_at: nil }
+          new_value
+        end
+      end
+
+      # Atomically decrement a counter
+      # @param key [String] The storage key
+      # @param amount [Integer] Amount to decrement by (default: 1)
+      # @return [Integer] The new value after decrementing
+      def decrement(key, amount: 1)
+        @monitor.synchronize do
+          current = get_counter_value(key)
+          new_value = [ current - amount, 0 ].max  # Don't go below 0
+          @store[key] = { value: new_value.to_s, expires_at: nil }
+          new_value
+        end
+      end
+
+      private
+
+      # Get counter value as integer (non-expired only)
+      # @param key [String] The storage key
+      # @return [Integer] Current counter value or 0 if not found/expired
+      def get_counter_value(key)
+        value = get(key)
+        value ? value.to_i : 0
+      end
     end
   end
 end

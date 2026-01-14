@@ -42,6 +42,35 @@ module Storage
       end
     end
 
+    # Atomically increment a counter
+    # @param key [String] The storage key
+    # @param amount [Integer] Amount to increment by (default: 1)
+    # @return [Integer] The new value after incrementing
+    def increment(key, amount: 1)
+      with_redis do |conn|
+        conn.incrby(key, amount)
+      end
+    end
+
+    # Atomically decrement a counter
+    # @param key [String] The storage key
+    # @param amount [Integer] Amount to decrement by (default: 1)
+    # @return [Integer] The new value after decrementing
+    def decrement(key, amount: 1)
+      with_redis do |conn|
+        # Use Lua script to ensure we don't go below 0
+        script = <<~LUA
+          local current = tonumber(redis.call('get', KEYS[1]) or 0)
+          local amount = tonumber(ARGV[1])
+          local new_value = math.max(current - amount, 0)
+          redis.call('set', KEYS[1], new_value)
+          return new_value
+        LUA
+
+        conn.eval(script, keys: [ key ], argv: [ amount ])
+      end
+    end
+
     private
 
     # Execute block with Redis connection
