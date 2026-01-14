@@ -4,14 +4,20 @@ require "rails_helper"
 
 RSpec.describe AvatarDownloadAndUploadService do
   let(:storage) { instance_double(AvatarStorage::S3) }
-  let(:service) { described_class.new(storage: storage) }
+  let(:client) { instance_double(Github::AvatarsClient) }
+  let(:key_deriver) { instance_double(AvatarKeyDeriver) }
+  let(:service) { described_class.new(storage: storage, client: client, key_deriver: key_deriver) }
 
   let(:avatar_url) { "https://avatars.githubusercontent.com/u/178611968?v=4" }
   let(:expected_key) { "avatars/178611968" }
-  let(:image_data) { "\x89PNG\r\n\x1a\n" } # PNG magic bytes
+  let(:image_data) { "\x89PNG\r\n\x1a\n" }
   let(:content_type) { "image/png" }
 
   describe "#call" do
+    before do
+      allow(key_deriver).to receive(:call).with(url: avatar_url).and_return(expected_key)
+    end
+
     context "when avatar already exists in storage" do
       before do
         allow(storage).to receive(:exists?).with(key: expected_key).and_return(true)
@@ -23,13 +29,15 @@ RSpec.describe AvatarDownloadAndUploadService do
         expect(result).to eq({ key: expected_key, uploaded: false, skipped: true })
       end
 
-      it "does not download the avatar" do
+      it "does not call client.download" do
+        allow(client).to receive(:download)
+
         service.call(avatar_url: avatar_url)
 
-        expect(a_request(:get, avatar_url)).not_to have_been_made
+        expect(client).not_to have_received(:download)
       end
 
-      it "does not call upload" do
+      it "does not call storage.upload" do
         allow(storage).to receive(:upload)
 
         service.call(avatar_url: avatar_url)
@@ -39,16 +47,22 @@ RSpec.describe AvatarDownloadAndUploadService do
     end
 
     context "when avatar does not exist in storage" do
+      let(:temp_file) { Tempfile.new(["test", ".tmp"], binmode: true) }
+
       before do
+        temp_file.write(image_data)
+        temp_file.rewind
+
         allow(storage).to receive(:exists?).with(key: expected_key).and_return(false)
         allow(storage).to receive(:upload).and_return(true)
+        allow(client).to receive(:download)
+          .with(url: avatar_url)
+          .and_return({ temp_file: temp_file, content_type: content_type })
+      end
 
-        stub_request(:get, avatar_url)
-          .to_return(
-            status: 200,
-            body: image_data,
-            headers: { "Content-Type" => content_type }
-          )
+      after do
+        temp_file.close unless temp_file.closed?
+        temp_file.unlink if temp_file.path && File.exist?(temp_file.path)
       end
 
       it "downloads and uploads the avatar" do
@@ -57,145 +71,65 @@ RSpec.describe AvatarDownloadAndUploadService do
         expect(result).to eq({ key: expected_key, uploaded: true, skipped: false })
       end
 
-      it "downloads from the avatar URL" do
+      it "calls key_deriver to derive the key" do
         service.call(avatar_url: avatar_url)
 
-        expect(a_request(:get, avatar_url)).to have_been_made.once
+        expect(key_deriver).to have_received(:call).with(url: avatar_url)
       end
 
-      it "uploads with correct parameters" do
+      it "calls client.download with the URL" do
         service.call(avatar_url: avatar_url)
 
-        expect(storage).to have_received(:upload) do |args|
-          expect(args[:key]).to eq(expected_key)
-          expect(args[:content_type]).to eq(content_type)
-          expect(args[:body]).to be_a(Tempfile)
-          expect(args[:body].read).to eq(image_data)
-        end
+        expect(client).to have_received(:download).with(url: avatar_url)
       end
 
-      it "passes a Tempfile to storage.upload" do
+      it "calls storage.upload with the temp file" do
         service.call(avatar_url: avatar_url)
 
-        expect(storage).to have_received(:upload) do |args|
-          expect(args[:body]).to respond_to(:read)
-          expect(args[:body]).to be_a(Tempfile)
-        end
-      end
-    end
-
-    context "when avatar URL uses different content types" do
-      before do
-        allow(storage).to receive(:exists?).and_return(false)
-        allow(storage).to receive(:upload).and_return(true)
-      end
-
-      %w[image/jpeg image/png image/gif image/webp].each do |type|
-        it "handles #{type} content type" do
-          stub_request(:get, avatar_url)
-            .to_return(
-              status: 200,
-              body: image_data,
-              headers: { "Content-Type" => type }
-            )
-
-          service.call(avatar_url: avatar_url)
-
-          expect(storage).to have_received(:upload) do |args|
-            expect(args[:key]).to eq(expected_key)
-            expect(args[:content_type]).to eq(type)
-            expect(args[:body].read).to eq(image_data)
-          end
-        end
-      end
-
-      it "handles content type with charset" do
-        stub_request(:get, avatar_url)
-          .to_return(
-            status: 200,
-            body: image_data,
-            headers: { "Content-Type" => "image/png; charset=utf-8" }
-          )
-
-        service.call(avatar_url: avatar_url)
-
-        expect(storage).to have_received(:upload) do |args|
-          expect(args[:key]).to eq(expected_key)
-          expect(args[:content_type]).to eq("image/png")
-          expect(args[:body].read).to eq(image_data)
-        end
-      end
-
-      it "defaults to image/png when content type is missing" do
-        stub_request(:get, avatar_url)
-          .to_return(status: 200, body: image_data)
-
-        service.call(avatar_url: avatar_url)
-
-        expect(storage).to have_received(:upload) do |args|
-          expect(args[:key]).to eq(expected_key)
-          expect(args[:content_type]).to eq("image/png")
-          expect(args[:body].read).to eq(image_data)
-        end
-      end
-    end
-
-    context "when GitHub redirects the avatar URL" do
-      let(:redirect_url) { "https://avatars.githubusercontent.com/u/178611968?v=5" }
-
-      before do
-        allow(storage).to receive(:exists?).and_return(false)
-        allow(storage).to receive(:upload).and_return(true)
-
-        stub_request(:get, avatar_url)
-          .to_return(status: 302, headers: { "Location" => redirect_url })
-
-        stub_request(:get, redirect_url)
-          .to_return(
-            status: 200,
-            body: image_data,
-            headers: { "Content-Type" => content_type }
-          )
-      end
-
-      it "follows the redirect" do
-        service.call(avatar_url: avatar_url)
-
-        expect(a_request(:get, avatar_url)).to have_been_made.once
-        expect(a_request(:get, redirect_url)).to have_been_made.once
-      end
-
-      it "uploads the final image" do
-        service.call(avatar_url: avatar_url)
-
-        expect(storage).to have_received(:upload) do |args|
-          expect(args[:key]).to eq(expected_key)
-          expect(args[:content_type]).to eq(content_type)
-          expect(args[:body].read).to eq(image_data)
-        end
+        expect(storage).to have_received(:upload).with(
+          key: expected_key,
+          body: temp_file,
+          content_type: content_type
+        )
       end
     end
 
     context "when URL is invalid" do
       it "raises InvalidUrlError for non-HTTP URLs" do
+        allow(key_deriver).to receive(:call)
+          .with(url: "ftp://example.com/avatar.png")
+          .and_raise(AvatarKeyDeriver::InvalidUrlError, "Invalid URL scheme: ftp://example.com/avatar.png")
+
         expect {
           service.call(avatar_url: "ftp://example.com/avatar.png")
         }.to raise_error(AvatarDownloadAndUploadService::InvalidUrlError, /Invalid URL scheme/)
       end
 
       it "raises InvalidUrlError for non-GitHub URLs" do
+        allow(key_deriver).to receive(:call)
+          .with(url: "https://example.com/avatar.png")
+          .and_raise(AvatarKeyDeriver::InvalidUrlError, "Not a GitHub avatar URL: https://example.com/avatar.png")
+
         expect {
           service.call(avatar_url: "https://example.com/avatar.png")
         }.to raise_error(AvatarDownloadAndUploadService::InvalidUrlError, /Not a GitHub avatar URL/)
       end
 
       it "raises InvalidUrlError for malformed URLs" do
+        allow(key_deriver).to receive(:call)
+          .with(url: "not-a-url")
+          .and_raise(AvatarKeyDeriver::InvalidUrlError, "Invalid URL")
+
         expect {
           service.call(avatar_url: "not-a-url")
         }.to raise_error(AvatarDownloadAndUploadService::InvalidUrlError)
       end
 
       it "raises InvalidUrlError when user ID cannot be extracted" do
+        allow(key_deriver).to receive(:call)
+          .with(url: "https://avatars.githubusercontent.com/some/other/path")
+          .and_raise(AvatarKeyDeriver::InvalidUrlError, "Cannot extract user ID from URL")
+
         expect {
           service.call(avatar_url: "https://avatars.githubusercontent.com/some/other/path")
         }.to raise_error(AvatarDownloadAndUploadService::InvalidUrlError, /Cannot extract user ID/)
@@ -208,7 +142,8 @@ RSpec.describe AvatarDownloadAndUploadService do
       end
 
       it "raises DownloadError on HTTP error response" do
-        stub_request(:get, avatar_url).to_return(status: 404)
+        allow(client).to receive(:download)
+          .and_raise(Github::AvatarsClient::DownloadError, "HTTP error: 404")
 
         expect {
           service.call(avatar_url: avatar_url)
@@ -216,7 +151,8 @@ RSpec.describe AvatarDownloadAndUploadService do
       end
 
       it "raises DownloadError on server error" do
-        stub_request(:get, avatar_url).to_return(status: 500)
+        allow(client).to receive(:download)
+          .and_raise(Github::AvatarsClient::DownloadError, "HTTP error: 500")
 
         expect {
           service.call(avatar_url: avatar_url)
@@ -224,19 +160,36 @@ RSpec.describe AvatarDownloadAndUploadService do
       end
 
       it "raises DownloadError on network timeout" do
-        stub_request(:get, avatar_url).to_timeout
+        allow(client).to receive(:download)
+          .and_raise(Github::AvatarsClient::DownloadError, "Network error downloading image: timeout")
 
         expect {
           service.call(avatar_url: avatar_url)
         }.to raise_error(AvatarDownloadAndUploadService::DownloadError, /Network error/)
       end
+    end
 
-      it "raises DownloadError on connection refused" do
-        stub_request(:get, avatar_url).to_raise(Errno::ECONNREFUSED)
+    context "when file is too large" do
+      before do
+        allow(storage).to receive(:exists?).and_return(false)
+      end
+
+      it "raises FileTooLargeError when Content-Length exceeds limit" do
+        allow(client).to receive(:download)
+          .and_raise(Github::AvatarsClient::FileTooLargeError, "File size exceeds maximum allowed")
 
         expect {
           service.call(avatar_url: avatar_url)
-        }.to raise_error(AvatarDownloadAndUploadService::DownloadError, /Network error/)
+        }.to raise_error(AvatarDownloadAndUploadService::FileTooLargeError, /exceeds maximum/)
+      end
+
+      it "raises FileTooLargeError during streaming" do
+        allow(client).to receive(:download)
+          .and_raise(Github::AvatarsClient::FileTooLargeError, "File size exceeded maximum during download")
+
+        expect {
+          service.call(avatar_url: avatar_url)
+        }.to raise_error(AvatarDownloadAndUploadService::FileTooLargeError, /exceeded maximum/)
       end
     end
 
@@ -245,200 +198,115 @@ RSpec.describe AvatarDownloadAndUploadService do
         allow(storage).to receive(:exists?).and_return(true)
       end
 
-      it "extracts user ID from standard avatar URL" do
+      it "uses key_deriver to extract user ID" do
+        allow(key_deriver).to receive(:call)
+          .with(url: "https://avatars.githubusercontent.com/u/12345?v=4")
+          .and_return("avatars/12345")
+
         result = service.call(avatar_url: "https://avatars.githubusercontent.com/u/12345?v=4")
 
         expect(result[:key]).to eq("avatars/12345")
       end
 
-      it "extracts user ID without query parameters" do
+      it "derives key for URL without query parameters" do
+        allow(key_deriver).to receive(:call)
+          .with(url: "https://avatars.githubusercontent.com/u/67890")
+          .and_return("avatars/67890")
+
         result = service.call(avatar_url: "https://avatars.githubusercontent.com/u/67890")
 
         expect(result[:key]).to eq("avatars/67890")
       end
 
       it "handles large user IDs" do
+        allow(key_deriver).to receive(:call)
+          .with(url: "https://avatars.githubusercontent.com/u/999999999999")
+          .and_return("avatars/999999999999")
+
         result = service.call(avatar_url: "https://avatars.githubusercontent.com/u/999999999999")
 
         expect(result[:key]).to eq("avatars/999999999999")
       end
     end
 
-    context "file size limits" do
+    context "temp file cleanup" do
+      let(:temp_file) { Tempfile.new(["test", ".tmp"], binmode: true) }
+
       before do
+        temp_file.write(image_data)
+        temp_file.rewind
+
         allow(storage).to receive(:exists?).and_return(false)
-      end
-
-      context "when Content-Length header exceeds limit" do
-        it "raises FileTooLargeError without downloading body" do
-          stub_request(:get, avatar_url)
-            .to_return(
-              status: 200,
-              headers: { "Content-Length" => "15000000" } # 15 MB
-            )
-
-          expect {
-            service.call(avatar_url: avatar_url)
-          }.to raise_error(
-            AvatarDownloadAndUploadService::FileTooLargeError,
-            /exceeds maximum/
-          )
-        end
-      end
-
-      context "when streamed bytes exceed limit (no Content-Length)" do
-        let(:large_body) { "x" * (11 * 1024 * 1024) } # 11 MB
-
-        it "raises FileTooLargeError during streaming" do
-          stub_request(:get, avatar_url)
-            .to_return(status: 200, body: large_body)
-
-          expect {
-            service.call(avatar_url: avatar_url)
-          }.to raise_error(
-            AvatarDownloadAndUploadService::FileTooLargeError,
-            /exceeded maximum.*during download/
-          )
-        end
-      end
-
-      context "when file is within limits" do
-        it "downloads and uploads successfully" do
-          allow(storage).to receive(:upload).and_return(true)
-
-          stub_request(:get, avatar_url)
-            .to_return(
-              status: 200,
-              body: image_data,
-              headers: {
-                "Content-Type" => content_type,
-                "Content-Length" => image_data.bytesize.to_s
-              }
-            )
-
-          result = service.call(avatar_url: avatar_url)
-
-          expect(result[:uploaded]).to be true
-        end
-      end
-
-      context "with custom max_file_size" do
-        let(:small_limit_service) do
-          described_class.new(storage: storage, max_file_size: 100)
-        end
-
-        it "respects custom limit" do
-          stub_request(:get, avatar_url)
-            .to_return(
-              status: 200,
-              body: "x" * 200,
-              headers: { "Content-Type" => "image/png" }
-            )
-
-          expect {
-            small_limit_service.call(avatar_url: avatar_url)
-          }.to raise_error(AvatarDownloadAndUploadService::FileTooLargeError)
-        end
-      end
-    end
-
-    context "temp file handling" do
-      before do
-        allow(storage).to receive(:exists?).and_return(false)
+        allow(client).to receive(:download)
+          .and_return({ temp_file: temp_file, content_type: content_type })
       end
 
       it "cleans up temp file after successful upload" do
         allow(storage).to receive(:upload).and_return(true)
 
-        stub_request(:get, avatar_url)
-          .to_return(status: 200, body: image_data, headers: { "Content-Type" => content_type })
-
-        temp_files = []
-        allow(Tempfile).to receive(:new).and_wrap_original do |method, *args, **kwargs|
-          tf = method.call(*args, **kwargs)
-          temp_files << tf
-          tf
-        end
-
         service.call(avatar_url: avatar_url)
 
-        temp_files.each do |tf|
-          expect(tf.closed?).to be true
-        end
+        expect(temp_file.closed?).to be true
       end
 
-      it "cleans up temp file on download error" do
-        stub_request(:get, avatar_url).to_return(status: 500)
-
-        temp_files = []
-        allow(Tempfile).to receive(:new).and_wrap_original do |method, *args, **kwargs|
-          tf = method.call(*args, **kwargs)
-          temp_files << tf
-          tf
-        end
+      it "cleans up temp file when upload fails" do
+        allow(storage).to receive(:upload).and_raise(StandardError, "Upload failed")
 
         expect {
           service.call(avatar_url: avatar_url)
-        }.to raise_error(AvatarDownloadAndUploadService::DownloadError)
+        }.to raise_error(StandardError)
 
-        temp_files.each do |tf|
-          expect(tf.closed?).to be true
-        end
-      end
-
-      it "cleans up temp file on size limit exceeded" do
-        stub_request(:get, avatar_url)
-          .to_return(
-            status: 200,
-            headers: { "Content-Length" => "999999999" }
-          )
-
-        temp_files = []
-        allow(Tempfile).to receive(:new).and_wrap_original do |method, *args, **kwargs|
-          tf = method.call(*args, **kwargs)
-          temp_files << tf
-          tf
-        end
-
-        expect {
-          service.call(avatar_url: avatar_url)
-        }.to raise_error(AvatarDownloadAndUploadService::FileTooLargeError)
-
-        temp_files.each do |tf|
-          expect(tf.closed?).to be true
-        end
+        expect(temp_file.closed?).to be true
       end
     end
+  end
 
-    context "redirect handling with temp files" do
-      let(:redirect_url) { "https://avatars.githubusercontent.com/u/178611968?v=5" }
+  describe "dependency injection" do
+    it "uses default dependencies when none provided" do
+      # Just verify we can create an instance with defaults
+      # (they may fail to initialize fully in test environment, so we just check the constructor)
+      expect { described_class.new }.not_to raise_error
+    end
 
-      before do
-        allow(storage).to receive(:exists?).and_return(false)
-        allow(storage).to receive(:upload).and_return(true)
-      end
+    it "accepts custom storage" do
+      custom_storage = instance_double(AvatarStorage::S3)
+      allow(custom_storage).to receive(:exists?).and_return(true)
+      allow(key_deriver).to receive(:call).and_return(expected_key)
 
-      it "cleans up temp file from initial request when following redirect" do
-        stub_request(:get, avatar_url)
-          .to_return(status: 302, headers: { "Location" => redirect_url })
+      custom_service = described_class.new(storage: custom_storage, key_deriver: key_deriver)
+      result = custom_service.call(avatar_url: avatar_url)
 
-        stub_request(:get, redirect_url)
-          .to_return(status: 200, body: image_data, headers: { "Content-Type" => content_type })
+      expect(result[:skipped]).to be true
+    end
 
-        temp_files = []
-        allow(Tempfile).to receive(:new).and_wrap_original do |method, *args, **kwargs|
-          tf = method.call(*args, **kwargs)
-          temp_files << tf
-          tf
-        end
+    it "accepts custom client" do
+      custom_client = instance_double(Github::AvatarsClient)
+      temp_file = Tempfile.new(["test", ".tmp"], binmode: true)
 
-        service.call(avatar_url: avatar_url)
+      allow(key_deriver).to receive(:call).and_return(expected_key)
+      allow(storage).to receive(:exists?).and_return(false)
+      allow(storage).to receive(:upload).and_return(true)
+      allow(custom_client).to receive(:download)
+        .and_return({ temp_file: temp_file, content_type: "image/png" })
 
-        # All temp files should be cleaned up
-        temp_files.each do |tf|
-          expect(tf.closed?).to be true
-        end
-      end
+      custom_service = described_class.new(storage: storage, client: custom_client, key_deriver: key_deriver)
+      custom_service.call(avatar_url: avatar_url)
+
+      expect(custom_client).to have_received(:download)
+
+      temp_file.close unless temp_file.closed?
+      temp_file.unlink if temp_file.path && File.exist?(temp_file.path)
+    end
+
+    it "accepts custom key_deriver" do
+      custom_deriver = instance_double(AvatarKeyDeriver)
+      allow(custom_deriver).to receive(:call).and_return("custom/key")
+      allow(storage).to receive(:exists?).and_return(true)
+
+      custom_service = described_class.new(storage: storage, key_deriver: custom_deriver)
+      result = custom_service.call(avatar_url: avatar_url)
+
+      expect(result[:key]).to eq("custom/key")
     end
   end
 end

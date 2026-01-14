@@ -18,24 +18,40 @@ RSpec.describe UploadAvatarJob, type: :job do
   end
 
   describe "retry behavior" do
-    it "retries on DownloadError" do
-      expect(described_class).to have_attribute(:retry_on).
-        or be_retryable_on(AvatarDownloadAndUploadService::DownloadError)
+    it "has retry configured for DownloadError" do
+      retry_handlers = described_class.rescue_handlers.select do |handler|
+        handler[0] == AvatarDownloadAndUploadService::DownloadError.name
+      end
+
+      expect(retry_handlers).not_to be_empty
     end
 
-    it "retries on Aws::S3::Errors::ServiceError" do
-      expect(described_class).to have_attribute(:retry_on).
-        or be_retryable_on(Aws::S3::Errors::ServiceError)
+    it "has retry configured for Aws::S3::Errors::ServiceError" do
+      retry_handlers = described_class.rescue_handlers.select do |handler|
+        handler[0] == "Aws::S3::Errors::ServiceError"
+      end
+
+      expect(retry_handlers).not_to be_empty
     end
 
     it "discards on InvalidUrlError" do
-      expect(described_class).to have_attribute(:discard_on).
-        or be_discardable_on(AvatarDownloadAndUploadService::InvalidUrlError)
+      service = instance_double(AvatarDownloadAndUploadService)
+      allow(AvatarDownloadAndUploadService).to receive(:new).and_return(service)
+      allow(service).to receive(:call).and_raise(AvatarDownloadAndUploadService::InvalidUrlError, "Invalid URL")
+
+      expect {
+        described_class.perform_now(avatar_url)
+      }.not_to have_enqueued_job(described_class)
     end
 
     it "discards on FileTooLargeError" do
-      expect(described_class).to have_attribute(:discard_on).
-        or be_discardable_on(AvatarDownloadAndUploadService::FileTooLargeError)
+      service = instance_double(AvatarDownloadAndUploadService)
+      allow(AvatarDownloadAndUploadService).to receive(:new).and_return(service)
+      allow(service).to receive(:call).and_raise(AvatarDownloadAndUploadService::FileTooLargeError, "File too large")
+
+      expect {
+        described_class.perform_now(avatar_url)
+      }.not_to have_enqueued_job(described_class)
     end
   end
 
