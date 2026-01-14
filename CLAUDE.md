@@ -20,62 +20,93 @@ This is a GitHub event ingestion system that:
 **IMPORTANT**: Before running any Rails commands or tests, you MUST ensure the correct Ruby version and bundler are installed.
 
 ### Required Versions
-- **Ruby**: `3.4.4` (specified in `.ruby-version`)
-- **Bundler**: `2.7.1` (specified in `Gemfile.lock`)
+
+The required versions are specified in project files:
+- **Ruby version**: Read from `.ruby-version` file
+- **Bundler version**: Read from `Gemfile.lock` (look for "BUNDLED WITH" at the end of the file)
 
 ### Setup Steps
 
 When working in Claude Code cloud environment, follow these steps in order:
 
-1. **Install Ruby 3.4.4 using rbenv**
+1. **Check required versions from project files**
    ```bash
+   # Get Ruby version from .ruby-version
+   cat .ruby-version
+   # Example output: ruby-3.4.4
+
+   # Get Bundler version from Gemfile.lock (last line after "BUNDLED WITH")
+   tail -n 1 Gemfile.lock
+   # Example output: 2.7.1
+   ```
+
+2. **Install the required Ruby version using rbenv**
+   ```bash
+   # Read the Ruby version (strip "ruby-" prefix if present)
+   RUBY_VERSION=$(cat .ruby-version | sed 's/ruby-//')
+
    # Install the required Ruby version
-   rbenv install 3.4.4
+   rbenv install $RUBY_VERSION
 
    # Set it as the local version for this project
-   rbenv local 3.4.4
+   rbenv local $RUBY_VERSION
 
    # Verify Ruby version
-   ruby -v  # Should show: ruby 3.4.4
+   ruby -v  # Should match the version from .ruby-version
    ```
 
-2. **Install the correct Bundler version**
+3. **Install the correct Bundler version**
    ```bash
-   # Install bundler 2.7.1 (matches Gemfile.lock)
-   gem install bundler -v 2.7.1
+   # Read the Bundler version from Gemfile.lock
+   BUNDLER_VERSION=$(tail -n 1 Gemfile.lock | tr -d ' ')
+
+   # Install bundler with the exact version from Gemfile.lock
+   gem install bundler -v $BUNDLER_VERSION
 
    # Verify bundler version
-   bundle -v  # Should show: Bundler version 2.7.1
+   bundle -v  # Should match the version from Gemfile.lock
    ```
 
-3. **Install project dependencies**
+4. **Install project dependencies**
    ```bash
    # Install all gems
    bundle install
    ```
 
+**Simplified one-liner** (if you prefer to run everything at once):
+```bash
+RUBY_VERSION=$(cat .ruby-version | sed 's/ruby-//') && \
+  rbenv install $RUBY_VERSION && \
+  rbenv local $RUBY_VERSION && \
+  gem install bundler -v $(tail -n 1 Gemfile.lock | tr -d ' ') && \
+  bundle install
+```
+
 ### Troubleshooting
 
-**If `rbenv install 3.4.4` fails:**
+**If `rbenv install` fails:**
 - The cloud environment should have rbenv pre-installed
-- If Ruby 3.4.4 is not available, it may need to be compiled from source
+- If the Ruby version is not available, it may need to be compiled from source
 - Check rbenv is in PATH: `which rbenv`
+- List available versions: `rbenv install --list`
 
 **If `bundle install` fails with version mismatch:**
-- Ensure you're using bundler 2.7.1: `bundle -v`
-- Try: `gem install bundler:2.7.1 && bundle _2.7.1_ install`
+- Verify bundler version: `bundle -v`
+- Check you're using the correct bundler: `gem list bundler`
+- Try specifying the version explicitly: `bundle _$(tail -n 1 Gemfile.lock | tr -d ' ')_ install`
 
 **If you see "Ruby version mismatch" errors:**
-- Verify: `ruby -v` shows 3.4.4
+- Verify: `ruby -v` matches the version from `.ruby-version`
 - Run: `rbenv rehash` to refresh rbenv shims
 - Check: `which ruby` points to rbenv's Ruby, not system Ruby
+- Try: `rbenv global $RUBY_VERSION` or restart your shell
 
 ### Quick Verification
 
 After setup, verify everything is correct:
 ```bash
-ruby -v        # Should show: ruby 3.4.4
-bundle -v      # Should show: Bundler version 2.7.1
+ruby -v        # Should match .ruby-version
+bundle -v      # Should match Gemfile.lock BUNDLED WITH version
 bundle check   # Should show: The Gemfile's dependencies are satisfied
 ```
 
