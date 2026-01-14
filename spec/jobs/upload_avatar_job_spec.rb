@@ -32,6 +32,11 @@ RSpec.describe UploadAvatarJob, type: :job do
       expect(described_class).to have_attribute(:discard_on).
         or be_discardable_on(AvatarDownloadAndUploadService::InvalidUrlError)
     end
+
+    it "discards on FileTooLargeError" do
+      expect(described_class).to have_attribute(:discard_on).
+        or be_discardable_on(AvatarDownloadAndUploadService::FileTooLargeError)
+    end
   end
 
   describe "job enqueueing" do

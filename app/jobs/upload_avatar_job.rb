@@ -23,6 +23,12 @@ class UploadAvatarJob < ApplicationJob
     Rails.logger.error("UploadAvatarJob: Discarded (invalid URL) - url: #{avatar_url}, error: #{error.message}")
   end
 
+  # Don't retry on file too large - this is a permanent failure
+  discard_on AvatarDownloadAndUploadService::FileTooLargeError do |job, error|
+    avatar_url = job.arguments.first
+    Rails.logger.error("UploadAvatarJob: Discarded (file too large) - url: #{avatar_url}, error: #{error.message}")
+  end
+
   def perform(avatar_url)
     AvatarDownloadAndUploadService.new.call(avatar_url: avatar_url)
   end

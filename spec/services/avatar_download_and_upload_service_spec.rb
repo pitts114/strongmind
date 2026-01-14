@@ -66,11 +66,21 @@ RSpec.describe AvatarDownloadAndUploadService do
       it "uploads with correct parameters" do
         service.call(avatar_url: avatar_url)
 
-        expect(storage).to have_received(:upload).with(
-          key: expected_key,
-          body: image_data,
-          content_type: content_type
-        )
+        expect(storage).to have_received(:upload) do |args|
+          expect(args[:key]).to eq(expected_key)
+          expect(args[:content_type]).to eq(content_type)
+          expect(args[:body]).to be_a(Tempfile)
+          expect(args[:body].read).to eq(image_data)
+        end
+      end
+
+      it "passes a Tempfile to storage.upload" do
+        service.call(avatar_url: avatar_url)
+
+        expect(storage).to have_received(:upload) do |args|
+          expect(args[:body]).to respond_to(:read)
+          expect(args[:body]).to be_a(Tempfile)
+        end
       end
     end
 
@@ -91,11 +101,11 @@ RSpec.describe AvatarDownloadAndUploadService do
 
           service.call(avatar_url: avatar_url)
 
-          expect(storage).to have_received(:upload).with(
-            key: expected_key,
-            body: image_data,
-            content_type: type
-          )
+          expect(storage).to have_received(:upload) do |args|
+            expect(args[:key]).to eq(expected_key)
+            expect(args[:content_type]).to eq(type)
+            expect(args[:body].read).to eq(image_data)
+          end
         end
       end
 
@@ -109,11 +119,11 @@ RSpec.describe AvatarDownloadAndUploadService do
 
         service.call(avatar_url: avatar_url)
 
-        expect(storage).to have_received(:upload).with(
-          key: expected_key,
-          body: image_data,
-          content_type: "image/png"
-        )
+        expect(storage).to have_received(:upload) do |args|
+          expect(args[:key]).to eq(expected_key)
+          expect(args[:content_type]).to eq("image/png")
+          expect(args[:body].read).to eq(image_data)
+        end
       end
 
       it "defaults to image/png when content type is missing" do
@@ -122,11 +132,11 @@ RSpec.describe AvatarDownloadAndUploadService do
 
         service.call(avatar_url: avatar_url)
 
-        expect(storage).to have_received(:upload).with(
-          key: expected_key,
-          body: image_data,
-          content_type: "image/png"
-        )
+        expect(storage).to have_received(:upload) do |args|
+          expect(args[:key]).to eq(expected_key)
+          expect(args[:content_type]).to eq("image/png")
+          expect(args[:body].read).to eq(image_data)
+        end
       end
     end
 
@@ -158,11 +168,11 @@ RSpec.describe AvatarDownloadAndUploadService do
       it "uploads the final image" do
         service.call(avatar_url: avatar_url)
 
-        expect(storage).to have_received(:upload).with(
-          key: expected_key,
-          body: image_data,
-          content_type: content_type
-        )
+        expect(storage).to have_received(:upload) do |args|
+          expect(args[:key]).to eq(expected_key)
+          expect(args[:content_type]).to eq(content_type)
+          expect(args[:body].read).to eq(image_data)
+        end
       end
     end
 
@@ -251,6 +261,183 @@ RSpec.describe AvatarDownloadAndUploadService do
         result = service.call(avatar_url: "https://avatars.githubusercontent.com/u/999999999999")
 
         expect(result[:key]).to eq("avatars/999999999999")
+      end
+    end
+
+    context "file size limits" do
+      before do
+        allow(storage).to receive(:exists?).and_return(false)
+      end
+
+      context "when Content-Length header exceeds limit" do
+        it "raises FileTooLargeError without downloading body" do
+          stub_request(:get, avatar_url)
+            .to_return(
+              status: 200,
+              headers: { "Content-Length" => "15000000" } # 15 MB
+            )
+
+          expect {
+            service.call(avatar_url: avatar_url)
+          }.to raise_error(
+            AvatarDownloadAndUploadService::FileTooLargeError,
+            /exceeds maximum/
+          )
+        end
+      end
+
+      context "when streamed bytes exceed limit (no Content-Length)" do
+        let(:large_body) { "x" * (11 * 1024 * 1024) } # 11 MB
+
+        it "raises FileTooLargeError during streaming" do
+          stub_request(:get, avatar_url)
+            .to_return(status: 200, body: large_body)
+
+          expect {
+            service.call(avatar_url: avatar_url)
+          }.to raise_error(
+            AvatarDownloadAndUploadService::FileTooLargeError,
+            /exceeded maximum.*during download/
+          )
+        end
+      end
+
+      context "when file is within limits" do
+        it "downloads and uploads successfully" do
+          allow(storage).to receive(:upload).and_return(true)
+
+          stub_request(:get, avatar_url)
+            .to_return(
+              status: 200,
+              body: image_data,
+              headers: {
+                "Content-Type" => content_type,
+                "Content-Length" => image_data.bytesize.to_s
+              }
+            )
+
+          result = service.call(avatar_url: avatar_url)
+
+          expect(result[:uploaded]).to be true
+        end
+      end
+
+      context "with custom max_file_size" do
+        let(:small_limit_service) do
+          described_class.new(storage: storage, max_file_size: 100)
+        end
+
+        it "respects custom limit" do
+          stub_request(:get, avatar_url)
+            .to_return(
+              status: 200,
+              body: "x" * 200,
+              headers: { "Content-Type" => "image/png" }
+            )
+
+          expect {
+            small_limit_service.call(avatar_url: avatar_url)
+          }.to raise_error(AvatarDownloadAndUploadService::FileTooLargeError)
+        end
+      end
+    end
+
+    context "temp file handling" do
+      before do
+        allow(storage).to receive(:exists?).and_return(false)
+      end
+
+      it "cleans up temp file after successful upload" do
+        allow(storage).to receive(:upload).and_return(true)
+
+        stub_request(:get, avatar_url)
+          .to_return(status: 200, body: image_data, headers: { "Content-Type" => content_type })
+
+        temp_files = []
+        allow(Tempfile).to receive(:new).and_wrap_original do |method, *args, **kwargs|
+          tf = method.call(*args, **kwargs)
+          temp_files << tf
+          tf
+        end
+
+        service.call(avatar_url: avatar_url)
+
+        temp_files.each do |tf|
+          expect(tf.closed?).to be true
+        end
+      end
+
+      it "cleans up temp file on download error" do
+        stub_request(:get, avatar_url).to_return(status: 500)
+
+        temp_files = []
+        allow(Tempfile).to receive(:new).and_wrap_original do |method, *args, **kwargs|
+          tf = method.call(*args, **kwargs)
+          temp_files << tf
+          tf
+        end
+
+        expect {
+          service.call(avatar_url: avatar_url)
+        }.to raise_error(AvatarDownloadAndUploadService::DownloadError)
+
+        temp_files.each do |tf|
+          expect(tf.closed?).to be true
+        end
+      end
+
+      it "cleans up temp file on size limit exceeded" do
+        stub_request(:get, avatar_url)
+          .to_return(
+            status: 200,
+            headers: { "Content-Length" => "999999999" }
+          )
+
+        temp_files = []
+        allow(Tempfile).to receive(:new).and_wrap_original do |method, *args, **kwargs|
+          tf = method.call(*args, **kwargs)
+          temp_files << tf
+          tf
+        end
+
+        expect {
+          service.call(avatar_url: avatar_url)
+        }.to raise_error(AvatarDownloadAndUploadService::FileTooLargeError)
+
+        temp_files.each do |tf|
+          expect(tf.closed?).to be true
+        end
+      end
+    end
+
+    context "redirect handling with temp files" do
+      let(:redirect_url) { "https://avatars.githubusercontent.com/u/178611968?v=5" }
+
+      before do
+        allow(storage).to receive(:exists?).and_return(false)
+        allow(storage).to receive(:upload).and_return(true)
+      end
+
+      it "cleans up temp file from initial request when following redirect" do
+        stub_request(:get, avatar_url)
+          .to_return(status: 302, headers: { "Location" => redirect_url })
+
+        stub_request(:get, redirect_url)
+          .to_return(status: 200, body: image_data, headers: { "Content-Type" => content_type })
+
+        temp_files = []
+        allow(Tempfile).to receive(:new).and_wrap_original do |method, *args, **kwargs|
+          tf = method.call(*args, **kwargs)
+          temp_files << tf
+          tf
+        end
+
+        service.call(avatar_url: avatar_url)
+
+        # All temp files should be cleaned up
+        temp_files.each do |tf|
+          expect(tf.closed?).to be true
+        end
       end
     end
   end
