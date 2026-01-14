@@ -11,8 +11,14 @@ class GithubUserFetcher
 
     Rails.logger.info("Saved GitHub user: #{username} (ID: #{result.id})")
     result
+  rescue Github::Client::ServerError => e
+    Rails.logger.warn("GithubUserFetcher: Server error - username: #{username}, error: #{e.message}")
+    raise
+  rescue Github::Client::RateLimitError => e
+    Rails.logger.warn("GithubUserFetcher: Rate limited - username: #{username}")
+    raise
   rescue Github::Client::ClientError => e
-    Rails.logger.warn("User fetch failed: #{username} - #{e.message}")
+    Rails.logger.warn("GithubUserFetcher: Client error - username: #{username}, error: #{e.message}")
     raise
   end
 
