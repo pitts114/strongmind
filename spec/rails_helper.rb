@@ -35,6 +35,9 @@ rescue ActiveRecord::PendingMigrationError => e
   abort e.to_s.strip
 end
 RSpec.configure do |config|
+  # Include ActiveJob test helpers for perform_enqueued_jobs, etc.
+  config.include ActiveJob::TestHelper
+
   # Remove this line if you're not using ActiveRecord or ActiveRecord fixtures
   config.fixture_paths = [
     Rails.root.join('spec/fixtures')
@@ -64,6 +67,15 @@ RSpec.configure do |config|
   #
   # To enable this behaviour uncomment the line below.
   # config.infer_spec_type_from_file_location!
+
+  # Infer spec type for integration and e2e directories
+  config.define_derived_metadata(file_path: %r{/spec/integration/}) do |metadata|
+    metadata[:type] = :integration
+  end
+
+  config.define_derived_metadata(file_path: %r{/spec/e2e/}) do |metadata|
+    metadata[:type] = :e2e
+  end
 
   # Filter lines from Rails gems in backtraces.
   config.filter_rails_from_backtrace!

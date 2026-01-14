@@ -1,6 +1,6 @@
 class PushEventFetcher
-  def initialize
-    @gateway = GithubGateway.new
+  def initialize(gateway: GithubGateway.new)
+    @gateway = gateway
   end
 
   def call
