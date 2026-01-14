@@ -11,7 +11,7 @@ class PushEventSaver
       event.ref = event_data.dig("payload", "ref")
       event.head = event_data.dig("payload", "head")
       event.before = event_data.dig("payload", "before")
-      event.raw = event_data
+      event.raw = event_data["payload"]
     end
 
     is_new = push_event.previously_new_record?
