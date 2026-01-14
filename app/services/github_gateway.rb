@@ -20,8 +20,7 @@ class GithubGateway
   attr_reader :client
 
   def create_client
-    redis = ::Redis.new(url: ENV.fetch("REDIS_URL"))
-    storage = Storage::Redis.new(redis: redis)
+    storage = Storage::Redis.new(redis: REDIS)
     Github::Client.new(storage: storage)
   end
 end
