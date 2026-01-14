@@ -67,7 +67,43 @@ end
 
 **Why?** Centralizes client creation, configuration, and makes testing easier.
 
-### 3. Background Jobs Pattern
+### 3. Long-Running Worker Pattern
+
+`IngestionWorker` is the main polling loop that drives event ingestion:
+
+```ruby
+class IngestionWorker
+  DEFAULT_POLL_INTERVAL = 60  # seconds
+  RATE_LIMIT_BACKOFF = 300    # 5 minutes
+  ERROR_BACKOFF = 30          # 30 seconds
+
+  def start
+    setup_signal_handlers
+    @running = true
+
+    while @running
+      run_fetch_cycle
+      sleep_with_interruption_check(poll_interval) if @running
+    end
+  end
+end
+```
+
+**Key Features:**
+- Polls GitHub API continuously in a loop
+- Configurable poll interval via `INGESTION_POLL_INTERVAL` env var (default: 60s)
+- Handles graceful shutdown on SIGTERM/SIGINT/SIGQUIT signals
+- Implements backoff strategies:
+  - Rate limit errors → 5 minute backoff
+  - Server/unexpected errors → 30 second backoff
+- Sleeps in 1-second increments for responsive shutdown
+
+**Starting the worker:**
+```bash
+bin/rails runner "IngestionWorker.new.start"
+```
+
+### 4. Background Jobs Pattern
 
 All jobs are thin wrappers that delegate to services:
 
@@ -652,6 +688,23 @@ repo.full_name # => "octocat/Hello-World"
 gateway = GithubGateway.new
 # The client tracks rate limit internally via Redis
 ```
+
+---
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INGESTION_POLL_INTERVAL` | `60` | Seconds between GitHub API fetch cycles |
+| `JOB_CONCURRENCY` | `1` | Number of Solid Queue worker processes |
+| `REDIS_URL` | - | Redis connection URL for rate limiting storage |
+| `GITHUB_TOKEN` | - | Optional: GitHub API token for higher rate limits |
+| `RAILS_MASTER_KEY` | - | Rails credentials encryption key |
+| `RAILS_LOG_LEVEL` | `info` | Logging verbosity (debug, info, warn, error) |
+| `DATABASE_URL` | - | PostgreSQL connection string (production) |
+| `SOLID_QUEUE_IN_PUMA` | `false` | Run Solid Queue supervisor inside Puma process |
+
+**Rate Limiting Note:** Without `GITHUB_TOKEN`, the app uses unauthenticated API access (60 requests/hour). With a token, this increases to 5,000 requests/hour.
 
 ---
 
