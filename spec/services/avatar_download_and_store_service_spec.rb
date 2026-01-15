@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe AvatarDownloadAndUploadService do
+RSpec.describe AvatarDownloadAndStoreService do
   let(:storage) { instance_double(AvatarStorage::S3) }
   let(:client) { instance_double(Github::AvatarsClient) }
   let(:key_deriver) { instance_double(AvatarKeyDeriver) }
@@ -114,7 +114,7 @@ RSpec.describe AvatarDownloadAndUploadService do
 
         expect {
           service.call(avatar_url: "ftp://example.com/avatar.png")
-        }.to raise_error(AvatarDownloadAndUploadService::InvalidUrlError, /Invalid URL scheme/)
+        }.to raise_error(AvatarDownloadAndStoreService::InvalidUrlError, /Invalid URL scheme/)
       end
 
       it "raises InvalidUrlError for non-GitHub URLs" do
@@ -124,7 +124,7 @@ RSpec.describe AvatarDownloadAndUploadService do
 
         expect {
           service.call(avatar_url: "https://example.com/avatar.png")
-        }.to raise_error(AvatarDownloadAndUploadService::InvalidUrlError, /Not a GitHub avatar URL/)
+        }.to raise_error(AvatarDownloadAndStoreService::InvalidUrlError, /Not a GitHub avatar URL/)
       end
 
       it "raises InvalidUrlError for malformed URLs" do
@@ -134,7 +134,7 @@ RSpec.describe AvatarDownloadAndUploadService do
 
         expect {
           service.call(avatar_url: "not-a-url")
-        }.to raise_error(AvatarDownloadAndUploadService::InvalidUrlError)
+        }.to raise_error(AvatarDownloadAndStoreService::InvalidUrlError)
       end
 
       it "raises InvalidUrlError when user ID cannot be extracted" do
@@ -144,7 +144,7 @@ RSpec.describe AvatarDownloadAndUploadService do
 
         expect {
           service.call(avatar_url: "https://avatars.githubusercontent.com/some/other/path")
-        }.to raise_error(AvatarDownloadAndUploadService::InvalidUrlError, /Cannot extract user ID/)
+        }.to raise_error(AvatarDownloadAndStoreService::InvalidUrlError, /Cannot extract user ID/)
       end
     end
 
@@ -159,7 +159,7 @@ RSpec.describe AvatarDownloadAndUploadService do
 
         expect {
           service.call(avatar_url: avatar_url)
-        }.to raise_error(AvatarDownloadAndUploadService::DownloadError, /404/)
+        }.to raise_error(AvatarDownloadAndStoreService::DownloadError, /404/)
       end
     end
 
@@ -176,7 +176,7 @@ RSpec.describe AvatarDownloadAndUploadService do
         expect {
           service.call(avatar_url: avatar_url)
         }.to raise_error(
-          AvatarDownloadAndUploadService::FileTooLargeError,
+          AvatarDownloadAndStoreService::FileTooLargeError,
           /exceeds maximum allowed/
         )
       end
@@ -223,7 +223,7 @@ RSpec.describe AvatarDownloadAndUploadService do
 
         expect {
           service.call(avatar_url: avatar_url)
-        }.to raise_error(AvatarDownloadAndUploadService::DownloadError, /404/)
+        }.to raise_error(AvatarDownloadAndStoreService::DownloadError, /404/)
       end
 
       it "raises DownloadError on server error" do
@@ -232,7 +232,7 @@ RSpec.describe AvatarDownloadAndUploadService do
 
         expect {
           service.call(avatar_url: avatar_url)
-        }.to raise_error(AvatarDownloadAndUploadService::DownloadError, /500/)
+        }.to raise_error(AvatarDownloadAndStoreService::DownloadError, /500/)
       end
 
       it "raises DownloadError on network timeout" do
@@ -241,7 +241,7 @@ RSpec.describe AvatarDownloadAndUploadService do
 
         expect {
           service.call(avatar_url: avatar_url)
-        }.to raise_error(AvatarDownloadAndUploadService::DownloadError, /Network error/)
+        }.to raise_error(AvatarDownloadAndStoreService::DownloadError, /Network error/)
       end
     end
 
@@ -259,7 +259,7 @@ RSpec.describe AvatarDownloadAndUploadService do
 
         expect {
           service.call(avatar_url: avatar_url)
-        }.to raise_error(AvatarDownloadAndUploadService::FileTooLargeError, /exceeded maximum/)
+        }.to raise_error(AvatarDownloadAndStoreService::FileTooLargeError, /exceeded maximum/)
       end
     end
 
@@ -366,7 +366,7 @@ RSpec.describe AvatarDownloadAndUploadService do
 
         expect {
           service.call(avatar_url: avatar_url)
-        }.to raise_error(AvatarDownloadAndUploadService::DownloadError)
+        }.to raise_error(AvatarDownloadAndStoreService::DownloadError)
 
         temp_dirs.each do |dir|
           expect(Dir.exist?(dir)).to be false

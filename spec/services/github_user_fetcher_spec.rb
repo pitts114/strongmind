@@ -39,7 +39,7 @@ RSpec.describe GithubUserFetcher do
         expect(result).to eq(saved_user)
       end
 
-      it "enqueues UploadAvatarJob with the avatar URL" do
+      it "enqueues ProcessAvatarJob with the avatar URL" do
         saver = instance_double(GithubUserSaver)
         saved_user = instance_double(GithubUser, id: 583231, login: "octocat")
 
@@ -49,7 +49,7 @@ RSpec.describe GithubUserFetcher do
 
         expect {
           fetcher.call(username: "octocat")
-        }.to have_enqueued_job(UploadAvatarJob).with(583231, "https://avatars.githubusercontent.com/u/583231?v=4")
+        }.to have_enqueued_job(ProcessAvatarJob).with(583231, "https://avatars.githubusercontent.com/u/583231?v=4")
       end
     end
 
@@ -71,7 +71,7 @@ RSpec.describe GithubUserFetcher do
         allow(fetch_guard).to receive(:should_fetch?).with(record: nil).and_return(true)
       end
 
-      it "does not enqueue UploadAvatarJob" do
+      it "does not enqueue ProcessAvatarJob" do
         saver = instance_double(GithubUserSaver)
         saved_user = instance_double(GithubUser, id: 583231, login: "octocat")
 
@@ -81,7 +81,7 @@ RSpec.describe GithubUserFetcher do
 
         expect {
           fetcher.call(username: "octocat")
-        }.not_to have_enqueued_job(UploadAvatarJob)
+        }.not_to have_enqueued_job(ProcessAvatarJob)
       end
     end
 
