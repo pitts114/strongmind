@@ -1,3 +1,11 @@
+# GitHub Event Ingestion System
+
+A service that ingests GitHub push events, enriches them with user and repository data, and stores everything durably in PostgreSQL.
+
+**[Design Brief](DESIGN_BRIEF.md)** - Architecture decisions, data modeling, rate limiting strategy, and testing approach.
+
+---
+
 # Development
 
 ## Setup
