@@ -26,6 +26,14 @@ class IngestionWorker
     Rails.logger.info("IngestionWorker stopped gracefully")
   end
 
+  # Run a single fetch cycle without looping
+  # Useful for manual invocation or cron jobs
+  # @return [Hash] Result from FetchAndEnqueuePushEventsService or error info
+  def run_once
+    Rails.logger.info("IngestionWorker running single fetch cycle")
+    run_fetch_cycle
+  end
+
   private
 
   def setup_signal_handlers

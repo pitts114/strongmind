@@ -6,7 +6,207 @@ A service that ingests GitHub push events, enriches them with user and repositor
 
 ---
 
-# Development
+# Production Deployment with Docker Compose
+
+## Prerequisites
+
+- Docker Desktop 4.0+ for macOS
+
+## Quick Start
+
+### Start the System
+
+```bash
+# Create environment file (uses working defaults)
+cp .env.production.example .env.production
+
+# Build and start all services
+docker compose -f docker-compose.prod.yml --env-file .env.production up --build
+```
+
+This starts:
+- **PostgreSQL** - Database for storing events and enriched data
+- **Redis** - Rate limiting and caching
+- **LocalStack** - S3-compatible object storage for avatars
+- **Web** - Rails web server (serves Sidekiq dashboard)
+- **Jobs** - Sidekiq background job processor
+- **Ingestion** - Continuous GitHub event ingestion worker
+
+### Run Ingestion (Manual One-Off)
+
+The ingestion worker runs continuously when you start the system. To run a single ingestion cycle manually:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --build ingest
+```
+
+### Run Tests
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.test.docker run --rm --build test
+```
+
+### View Logs
+
+```bash
+# All services
+docker compose -f docker-compose.prod.yml --env-file .env.production logs -f
+
+# Specific service
+docker compose -f docker-compose.prod.yml --env-file .env.production logs -f ingestion
+docker compose -f docker-compose.prod.yml --env-file .env.production logs -f jobs
+```
+
+## How to Verify the System is Working
+
+### Expected Logs
+
+After starting the system, you should see logs indicating successful operation:
+
+**Ingestion Worker Logs:**
+```
+ingestion  | Starting ingestion worker with poll interval: 60 seconds
+ingestion  | Fetching public events from GitHub API...
+ingestion  | Fetched 30 events, filtering for PushEvents...
+ingestion  | Found 15 PushEvents, enqueueing for processing...
+ingestion  | Successfully enqueued 15 push events for processing
+ingestion  | Sleeping for 60 seconds before next fetch...
+```
+
+**Job Worker Logs:**
+```
+jobs  | Performing HandlePushEventJob...
+jobs  | Saved push event: 12345678901
+jobs  | Enqueuing FetchAndSaveGithubUserJob for user: octocat
+jobs  | Enqueuing FetchAndSaveGithubRepositoryJob for repo: octocat/Hello-World
+jobs  | Performed HandlePushEventJob in 0.5s
+```
+
+**Rate Limit Handling:**
+When rate limits are reached, you'll see:
+```
+ingestion  | Rate limit reached. Backing off for 300 seconds...
+```
+
+### Database Tables to Check
+
+Connect to the database:
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production exec db psql -U postgres strongmind_server_production
+```
+
+Check ingested data:
+```sql
+-- Count push events
+SELECT COUNT(*) FROM github_push_events;
+
+-- View recent push events
+SELECT id, actor_id, repository_id, ref, created_at
+FROM github_push_events
+ORDER BY created_at DESC
+LIMIT 10;
+
+-- Count enriched users
+SELECT COUNT(*) FROM github_users;
+
+-- View recent users
+SELECT id, login, name, public_repos, followers
+FROM github_users
+ORDER BY updated_at DESC
+LIMIT 10;
+
+-- Count enriched repositories
+SELECT COUNT(*) FROM github_repositories;
+
+-- View recent repositories
+SELECT id, full_name, stargazers_count, language
+FROM github_repositories
+ORDER BY updated_at DESC
+LIMIT 10;
+```
+
+## Stop the System
+
+```bash
+# Stop services (preserves data)
+docker compose -f docker-compose.prod.yml --env-file .env.production stop
+
+# Stop and remove containers (preserves data volumes)
+docker compose -f docker-compose.prod.yml --env-file .env.production down
+
+# Stop and remove everything including data (DESTROYS DATA)
+docker compose -f docker-compose.prod.yml --env-file .env.production down -v
+```
+
+## Common Operations
+
+### Access Rails Console
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production exec jobs rails console
+```
+
+### Run Database Migrations
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production exec jobs rails db:migrate
+```
+
+### Check Service Status
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production ps
+```
+
+### Rebuild After Code Changes
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production up --build -d
+```
+
+## Environment Variables
+
+See `.env.production.example` for all options. Key variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SECRET_KEY_BASE` | (required) | Rails session encryption key |
+| `DATABASE_PASSWORD` | postgres | PostgreSQL password |
+| `INGESTION_POLL_INTERVAL` | 60 | Seconds between GitHub API polls |
+| `RAILS_LOG_LEVEL` | info | Log verbosity (debug/info/warn/error) |
+| `AWS_ACCESS_KEY_ID` | test | S3 access key (use `test` for LocalStack) |
+| `AWS_SECRET_ACCESS_KEY` | test | S3 secret key (use `test` for LocalStack) |
+| `AWS_ENDPOINT_URL` | http://localstack:4566 | S3 endpoint URL |
+| `AVATAR_S3_BUCKET` | user-avatars | S3 bucket for user avatars |
+
+## Troubleshooting
+
+### Services won't start
+
+```bash
+# Check logs for errors
+docker compose -f docker-compose.prod.yml --env-file .env.production logs
+
+# Verify all containers are running
+docker compose -f docker-compose.prod.yml --env-file .env.production ps
+```
+
+### No events being ingested
+
+1. Check ingestion worker logs for rate limit messages
+2. Verify network connectivity to api.github.com
+3. Check that the database is healthy
+
+### Tests failing
+
+```bash
+# Run tests with verbose output
+docker compose -f docker-compose.prod.yml --env-file .env.test.docker run --rm --build test bundle exec rspec --format documentation
+```
+
+# Local Development
+
+For local development without Docker (requires local PostgreSQL, Redis, and LocalStack).
 
 ## Setup
 1. **Create Environment File**
@@ -20,151 +220,21 @@ A service that ingests GitHub push events, enriches them with user and repositor
    bundle install
    ```
 
-## Server
-`bundle exec rails server`
-
-## Sidekiq
-`bundle exec sidekiq`
-
-# Production Deployment with Docker Compose
-
-## Prerequisites
-- Docker 20.10+ with Compose V2
-
-## Quick Start
-
-1. **Create Environment File**
+3. **Setup Database**
    ```bash
-   # Copy the template (already has working defaults)
-   cp .env.production.example .env.production
+   rails db:prepare
    ```
 
-2. **Build and Start Services**
-   ```bash
-   # Build images
-   docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.production build
-
-   # Start all services
-   docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.production up -d
-   ```
-
-3. **Verify Everything Started**
-   ```bash
-   # Check service status
-   docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.production ps
-
-   # Check logs
-   docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.production logs -f
-   ```
-
-   The web app will be available at http://localhost:3000
-
-## Common Operations
-
-### View Logs
+## Sidekiq (Background Jobs)
 ```bash
-# All services
-docker compose -f docker-compose.prod.yml --env-file .env.production logs -f
-
-# Specific service
-docker compose -f docker-compose.prod.yml --env-file .env.production logs -f web
-docker compose -f docker-compose.prod.yml --env-file .env.production logs -f ingestion
-docker compose -f docker-compose.prod.yml --env-file .env.production logs -f jobs
+bundle exec sidekiq
 ```
 
-### Restart Services
+## Ingestion Worker
 ```bash
-# Restart all services
-docker compose -f docker-compose.prod.yml --env-file .env.production restart
+# Continuous polling (default)
+bin/ingestion_worker
 
-# Restart specific service
-docker compose -f docker-compose.prod.yml --env-file .env.production restart web
-```
-
-### Stop Services
-```bash
-# Stop all services (preserves data)
-docker compose -f docker-compose.prod.yml --env-file .env.production stop
-
-# Stop and remove containers (preserves data)
-docker compose -f docker-compose.prod.yml --env-file .env.production down
-
-# Stop and remove containers + volumes (DESTROYS DATA)
-docker compose -f docker-compose.prod.yml --env-file .env.production down -v
-```
-
-### Access Rails Console
-```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production exec web rails console
-```
-
-### Run Database Migrations Manually
-```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production exec web rails db:migrate
-```
-
-### Rebuild After Code Changes
-```bash
-# Build new images
-docker compose -f docker-compose.prod.yml --env-file .env.production build
-
-# Restart services with new images
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d
-```
-
-## Monitoring
-
-### Service Health
-```bash
-# Check container status
-docker compose -f docker-compose.prod.yml --env-file .env.production ps
-
-# Check resource usage
-docker compose -f docker-compose.prod.yml --env-file .env.production stats
-```
-
-### Database Access
-```bash
-# Connect to PostgreSQL
-docker compose -f docker-compose.prod.yml --env-file .env.production exec db psql -U postgres strongmind_server_production
-```
-
-### Redis CLI
-```bash
-# Connect to Redis
-docker compose -f docker-compose.prod.yml --env-file .env.production exec redis redis-cli
-```
-
-## Environment Variables
-
-See `.env.production.example` for complete list. The example file has working defaults for all required variables.
-
-**Key Variables:**
-- `SECRET_KEY_BASE` - Rails sessions/cookies key (128 hex chars)
-- `DATABASE_PASSWORD` - Database password (default: postgres)
-- `INGESTION_POLL_INTERVAL` - GitHub polling interval in seconds (default: 60)
-- `RAILS_LOG_LEVEL` - Logging verbosity: debug, info, warn, error, fatal (default: info)
-- `RAILS_MAX_THREADS` - Thread pool size for web/job workers
-
-## Troubleshooting
-
-### Services won't start
-```bash
-# Check logs for errors
-docker compose -f docker-compose.prod.yml --env-file .env.production logs
-```
-
-### Database connection errors
-```bash
-# Ensure database is healthy
-docker compose -f docker-compose.prod.yml --env-file .env.production ps db
-
-# Check database logs
-docker compose -f docker-compose.prod.yml --env-file .env.production logs db
-```
-
-### Ingestion worker not fetching
-```bash
-# Check ingestion worker logs
-docker compose -f docker-compose.prod.yml --env-file .env.production logs ingestion
+# Single fetch cycle (one-time)
+bin/ingestion_worker --once
 ```

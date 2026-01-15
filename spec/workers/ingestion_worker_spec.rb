@@ -117,6 +117,52 @@ RSpec.describe IngestionWorker do
     end
   end
 
+  describe "#run_once" do
+    it "calls FetchAndEnqueuePushEventsService once" do
+      worker.run_once
+
+      expect(service).to have_received(:call).once
+    end
+
+    it "logs that it is running a single fetch cycle" do
+      allow(Rails.logger).to receive(:info)
+
+      worker.run_once
+
+      expect(Rails.logger).to have_received(:info).with("IngestionWorker running single fetch cycle")
+    end
+
+    context "when rate limit error occurs" do
+      before do
+        allow(service).to receive(:call).and_raise(
+          Github::Client::RateLimitError.new("Rate limit", status_code: 403)
+        )
+      end
+
+      it "logs warning and does not crash" do
+        allow(Rails.logger).to receive(:info)
+        expect(Rails.logger).to receive(:warn).with(/rate limit exceeded/i)
+
+        expect { worker.run_once }.not_to raise_error
+      end
+    end
+
+    context "when server error occurs" do
+      before do
+        allow(service).to receive(:call).and_raise(
+          Github::Client::ServerError.new("Server error", status_code: 500)
+        )
+      end
+
+      it "logs error and does not crash" do
+        allow(Rails.logger).to receive(:info)
+        expect(Rails.logger).to receive(:error).with(/server error/i)
+
+        expect { worker.run_once }.not_to raise_error
+      end
+    end
+  end
+
   describe "signal handling" do
     before do
       # Stub logger to avoid "log writing failed" warnings from signal traps

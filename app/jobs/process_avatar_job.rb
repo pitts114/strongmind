@@ -8,9 +8,13 @@
 # For now, orphaned files are acceptable given low storage costs.
 
 class ProcessAvatarJob < ApplicationJob
+  # Exponential backoff: (executions^4) + 2 seconds
+  # This matches Rails' :exponentially_longer but avoids compatibility issues with Sidekiq
+  EXPONENTIAL_BACKOFF = ->(executions) { ((executions || 1)**4) + 2 }
+
   # Retry on transient network errors with exponential backoff
   retry_on AvatarDownloadAndStoreService::DownloadError,
-    wait: :exponentially_longer,
+    wait: EXPONENTIAL_BACKOFF,
     attempts: 5 do |job, error|
       user_id, avatar_url = job.arguments
       Rails.logger.error("ProcessAvatarJob: Failed after max retries - user_id: #{user_id}, url: #{avatar_url}, error: #{error.message}")
@@ -18,7 +22,7 @@ class ProcessAvatarJob < ApplicationJob
 
   # Retry on AWS S3 transient errors
   retry_on Aws::S3::Errors::ServiceError,
-    wait: :exponentially_longer,
+    wait: EXPONENTIAL_BACKOFF,
     attempts: 5 do |job, error|
       user_id, avatar_url = job.arguments
       Rails.logger.error("ProcessAvatarJob: Failed after max retries (S3 error) - user_id: #{user_id}, url: #{avatar_url}, error: #{error.message}")
