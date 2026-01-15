@@ -33,6 +33,18 @@ class GithubUserFetcher
     result = GithubUserSaver.new.call(user_data: user_data)
 
     Rails.logger.info("Saved GitHub user: #{username} (ID: #{result.id})")
+
+    enqueue_avatar_upload(user: result, avatar_url: user_data["avatar_url"])
+
     result
+  end
+
+  def enqueue_avatar_upload(user:, avatar_url:)
+    if avatar_url.present?
+      UploadAvatarJob.perform_later(user.id, avatar_url)
+      Rails.logger.info("Enqueued avatar upload for user #{user.login} (ID: #{user.id}) - url: #{avatar_url}")
+    else
+      Rails.logger.info("No avatar URL found for user #{user.login}, skipping avatar upload")
+    end
   end
 end
