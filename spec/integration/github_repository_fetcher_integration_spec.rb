@@ -39,7 +39,7 @@ RSpec.describe "GithubRepositoryFetcher Integration" do
 
   describe "idempotency - updating existing repository" do
     # Inject a fetch guard that always triggers a fetch
-    let(:fetch_guard) { instance_double(GithubRepositoryFetchGuard, find_unless_fetch_needed: nil) }
+    let(:fetch_guard) { instance_double(FetchGuard, should_fetch?: true) }
     let(:fetcher) { GithubRepositoryFetcher.new(gateway: gateway, fetch_guard: fetch_guard) }
 
     let(:initial_data) { build(:repository_api_response, full_name: "octocat/Hello-World", repo_id: 1296269) }

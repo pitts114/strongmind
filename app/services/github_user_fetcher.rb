@@ -1,13 +1,15 @@
 class GithubUserFetcher
-  def initialize(gateway: GithubGateway.new, fetch_guard: GithubUserFetchGuard.new)
+  def initialize(gateway: GithubGateway.new, fetch_guard: FetchGuard.new)
     @gateway = gateway
     @fetch_guard = fetch_guard
   end
 
   def call(username:)
-    if (user = fetch_guard.find_unless_fetch_needed(identifier: username))
-      Rails.logger.info("Skipping fetch for user #{username} - fetch not needed (last updated: #{user.updated_at})")
-      return user
+    existing_user = GithubUser.find_by(login: username)
+
+    unless fetch_guard.should_fetch?(record: existing_user)
+      Rails.logger.info("Skipping fetch for user #{username} - fetch not needed (last updated: #{existing_user.updated_at})")
+      return existing_user
     end
 
     fetch_and_save(username)
