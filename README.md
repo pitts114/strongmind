@@ -125,6 +125,17 @@ ORDER BY updated_at DESC
 LIMIT 10;
 ```
 
+### Timeline for Results
+
+| Event | Expected Time |
+|-------|---------------|
+| Services start | ~30 seconds after `up --build` |
+| First API fetch | ~1 minute after services healthy |
+| Push events in database | ~1-2 minutes |
+| Enriched users/repos | ~1-2 minutes |
+
+**Note:** The GitHub API allows only 60 requests/hour for unauthenticated requests. When the rate limit is reached, the system backs off and waits, which can take a long time (up to an hour). You'll see logs like `Rate limit reached. Backing off...` when this happens.
+
 ## Stop the System
 
 ```bash
