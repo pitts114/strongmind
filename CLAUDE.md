@@ -387,8 +387,8 @@ end
 ```
 
 **Behavior:**
-- User fetch jobs are **only enqueued for `:user` actors**
-- Bots and unknown actors are **skipped** with info logging
+- User fetch jobs are **enqueued for `:user` and `:bot` actors**
+- Unknown actors (e.g., organizations) are **skipped** with info logging
 - Repository fetch jobs are **always enqueued** regardless of actor type
 
 ---
