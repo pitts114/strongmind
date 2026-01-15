@@ -45,16 +45,11 @@ RSpec.describe "PushEventHandler Integration" do
       }.to change(GithubPushEvent, :count).by(1)
     end
 
-    it "enqueues repository fetch job" do
+    it "enqueues both user and repository fetch jobs" do
       expect {
         handler.call(event_data: event_data)
       }.to have_enqueued_job(FetchAndSaveGithubRepositoryJob).with("owner", "bot-repo")
-    end
-
-    it "does not enqueue user fetch job" do
-      expect {
-        handler.call(event_data: event_data)
-      }.not_to have_enqueued_job(FetchAndSaveGithubUserJob)
+        .and have_enqueued_job(FetchAndSaveGithubUserJob)
     end
   end
 
