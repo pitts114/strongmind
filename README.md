@@ -33,138 +33,238 @@ A service that ingests GitHub push events, enriches them with user and repositor
 
 ## Quick Start
 
-1. **Create Environment File**
-   ```bash
-   # Copy the template (already has working defaults)
-   cp .env.production.example .env.production
-   ```
+### Prerequisites
 
-2. **Build and Start Services**
-   ```bash
-   # Build images
-   docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.production build
+- Docker 20.10+ with Docker Compose V2
+- macOS with Docker Desktop (or Linux with Docker)
 
-   # Start all services
-   docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.production up -d
-   ```
+### Start the System
 
-3. **Verify Everything Started**
-   ```bash
-   # Check service status
-   docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.production ps
+```bash
+# Create environment file (uses working defaults)
+cp .env.production.example .env.production
 
-   # Check logs
-   docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.production logs -f
-   ```
+# Build and start all services
+docker compose -f docker-compose.prod.yml --env-file .env.production up --build
+```
 
-   The web app will be available at http://localhost:3000
+This starts:
+- **PostgreSQL** - Database for storing events and enriched data
+- **Redis** - Rate limiting and caching
+- **Web** - Rails web application (http://localhost:3000)
+- **Jobs** - Sidekiq background job processor
+- **Ingestion** - Continuous GitHub event ingestion worker
 
-## Common Operations
+### Run Ingestion (Manual One-Off)
+
+The ingestion worker runs continuously when you start the system. To run a single ingestion cycle manually:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm ingest
+```
+
+### Run Tests
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm test
+```
 
 ### View Logs
+
 ```bash
 # All services
 docker compose -f docker-compose.prod.yml --env-file .env.production logs -f
 
 # Specific service
-docker compose -f docker-compose.prod.yml --env-file .env.production logs -f web
 docker compose -f docker-compose.prod.yml --env-file .env.production logs -f ingestion
 docker compose -f docker-compose.prod.yml --env-file .env.production logs -f jobs
+docker compose -f docker-compose.prod.yml --env-file .env.production logs -f web
 ```
 
-### Restart Services
-```bash
-# Restart all services
-docker compose -f docker-compose.prod.yml --env-file .env.production restart
+## How to Verify the System is Working
 
-# Restart specific service
-docker compose -f docker-compose.prod.yml --env-file .env.production restart web
+### Expected Logs
+
+After starting the system, you should see logs indicating successful operation:
+
+**Ingestion Worker Logs:**
+```
+ingestion  | Starting ingestion worker with poll interval: 60 seconds
+ingestion  | Fetching public events from GitHub API...
+ingestion  | Fetched 30 events, filtering for PushEvents...
+ingestion  | Found 15 PushEvents, enqueueing for processing...
+ingestion  | Successfully enqueued 15 push events for processing
+ingestion  | Sleeping for 60 seconds before next fetch...
 ```
 
-### Stop Services
+**Job Worker Logs:**
+```
+jobs  | Performing HandlePushEventJob...
+jobs  | Saved push event: 12345678901
+jobs  | Enqueuing FetchAndSaveGithubUserJob for user: octocat
+jobs  | Enqueuing FetchAndSaveGithubRepositoryJob for repo: octocat/Hello-World
+jobs  | Performed HandlePushEventJob in 0.5s
+```
+
+**Rate Limit Handling:**
+When rate limits are reached, you'll see:
+```
+ingestion  | Rate limit reached. Backing off for 300 seconds...
+```
+
+### Database Tables to Check
+
+Connect to the database:
 ```bash
-# Stop all services (preserves data)
+docker compose -f docker-compose.prod.yml --env-file .env.production exec db psql -U postgres strongmind_server_production
+```
+
+Check ingested data:
+```sql
+-- Count push events
+SELECT COUNT(*) FROM github_push_events;
+
+-- View recent push events
+SELECT id, actor_id, repository_id, ref, created_at
+FROM github_push_events
+ORDER BY created_at DESC
+LIMIT 10;
+
+-- Count enriched users
+SELECT COUNT(*) FROM github_users;
+
+-- View recent users
+SELECT id, login, name, public_repos, followers
+FROM github_users
+ORDER BY updated_at DESC
+LIMIT 10;
+
+-- Count enriched repositories
+SELECT COUNT(*) FROM github_repositories;
+
+-- View recent repositories
+SELECT id, full_name, stargazers_count, language
+FROM github_repositories
+ORDER BY updated_at DESC
+LIMIT 10;
+```
+
+### Timeline for Results
+
+| Event | Expected Time |
+|-------|---------------|
+| Services start | ~30 seconds after `up --build` |
+| First API fetch | ~1 minute after services healthy |
+| Push events in database | ~1-2 minutes |
+| Enriched users/repos | ~2-5 minutes (depends on job queue) |
+
+**Note:** Without a GitHub token, the API is limited to 60 requests/hour. The system handles this gracefully by backing off when limits are reached.
+
+## Stop the System
+
+```bash
+# Stop services (preserves data)
 docker compose -f docker-compose.prod.yml --env-file .env.production stop
 
-# Stop and remove containers (preserves data)
+# Stop and remove containers (preserves data volumes)
 docker compose -f docker-compose.prod.yml --env-file .env.production down
 
-# Stop and remove containers + volumes (DESTROYS DATA)
+# Stop and remove everything including data (DESTROYS DATA)
 docker compose -f docker-compose.prod.yml --env-file .env.production down -v
 ```
 
+## Common Operations
+
 ### Access Rails Console
+
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.production exec web rails console
 ```
 
-### Run Database Migrations Manually
+### Run Database Migrations
+
 ```bash
 docker compose -f docker-compose.prod.yml --env-file .env.production exec web rails db:migrate
 ```
 
-### Rebuild After Code Changes
+### Check Service Status
+
 ```bash
-# Build new images
-docker compose -f docker-compose.prod.yml --env-file .env.production build
-
-# Restart services with new images
-docker compose -f docker-compose.prod.yml --env-file .env.production up -d
-```
-
-## Monitoring
-
-### Service Health
-```bash
-# Check container status
 docker compose -f docker-compose.prod.yml --env-file .env.production ps
-
-# Check resource usage
-docker compose -f docker-compose.prod.yml --env-file .env.production stats
 ```
 
-### Database Access
-```bash
-# Connect to PostgreSQL
-docker compose -f docker-compose.prod.yml --env-file .env.production exec db psql -U postgres strongmind_server_production
-```
+### Rebuild After Code Changes
 
-### Redis CLI
 ```bash
-# Connect to Redis
-docker compose -f docker-compose.prod.yml --env-file .env.production exec redis redis-cli
+docker compose -f docker-compose.prod.yml --env-file .env.production up --build -d
 ```
 
 ## Environment Variables
 
-See `.env.production.example` for complete list. The example file has working defaults for all required variables.
+See `.env.production.example` for all options. Key variables:
 
-**Key Variables:**
-- `SECRET_KEY_BASE` - Rails sessions/cookies key (128 hex chars)
-- `DATABASE_PASSWORD` - Database password (default: postgres)
-- `INGESTION_POLL_INTERVAL` - GitHub polling interval in seconds (default: 60)
-- `RAILS_LOG_LEVEL` - Logging verbosity: debug, info, warn, error, fatal (default: info)
-- `RAILS_MAX_THREADS` - Thread pool size for web/job workers
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SECRET_KEY_BASE` | (required) | Rails session encryption key |
+| `DATABASE_PASSWORD` | postgres | PostgreSQL password |
+| `INGESTION_POLL_INTERVAL` | 60 | Seconds between GitHub API polls |
+| `RAILS_LOG_LEVEL` | info | Log verbosity (debug/info/warn/error) |
+
+## Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│  GitHub API     │     │   PostgreSQL    │
+│  /events        │     │   Database      │
+└────────┬────────┘     └────────▲────────┘
+         │                       │
+         ▼                       │
+┌─────────────────┐     ┌────────┴────────┐
+│  Ingestion      │────▶│  Jobs (Sidekiq) │
+│  Worker         │     │  - HandlePush   │
+└─────────────────┘     │  - FetchUser    │
+                        │  - FetchRepo    │
+                        └─────────────────┘
+```
 
 ## Troubleshooting
 
 ### Services won't start
+
 ```bash
 # Check logs for errors
 docker compose -f docker-compose.prod.yml --env-file .env.production logs
+
+# Verify all containers are running
+docker compose -f docker-compose.prod.yml --env-file .env.production ps
 ```
 
-### Database connection errors
-```bash
-# Ensure database is healthy
-docker compose -f docker-compose.prod.yml --env-file .env.production ps db
+### No events being ingested
 
-# Check database logs
-docker compose -f docker-compose.prod.yml --env-file .env.production logs db
+1. Check ingestion worker logs for rate limit messages
+2. Verify network connectivity to api.github.com
+3. Check that the database is healthy
+
+### Tests failing
+
+```bash
+# Run tests with verbose output
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm test bundle exec rspec --format documentation
 ```
 
-### Ingestion worker not fetching
+## Development Setup
+
+For local development without Docker:
+
 ```bash
-# Check ingestion worker logs
-docker compose -f docker-compose.prod.yml --env-file .env.production logs ingestion
+# Install dependencies
+bundle install
+
+# Setup database
+rails db:prepare
+
+# Start services (requires local PostgreSQL and Redis)
+bundle exec rails server
+bundle exec sidekiq
+bin/ingestion_worker
 ```

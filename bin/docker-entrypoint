@@ -11,4 +11,9 @@ if [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
   ./bin/rails db:prepare
 fi
 
+# If running rspec tests then prepare the test database
+if [ "${@: -1:1}" == "rspec" ] || [[ "${@}" == *"rspec"* ]]; then
+  ./bin/rails db:prepare
+fi
+
 exec "${@}"
