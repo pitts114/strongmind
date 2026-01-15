@@ -48,6 +48,7 @@ services:
       retries: 5
 
   # Rails Web Application (Rails server)
+  # Runs migrations on startup via docker-entrypoint, then starts the server
   web:
     build:
       context: .
@@ -77,6 +78,12 @@ services:
         condition: service_healthy
       localstack:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/up || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
     networks:
       - strongmind
 
@@ -103,11 +110,7 @@ services:
       AWS_FORCE_PATH_STYLE: ${AWS_FORCE_PATH_STYLE:-true}
       AVATAR_S3_BUCKET: ${AVATAR_S3_BUCKET:-user-avatars}
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      localstack:
+      web:
         condition: service_healthy
     networks:
       - strongmind
@@ -136,11 +139,7 @@ services:
       AWS_FORCE_PATH_STYLE: ${AWS_FORCE_PATH_STYLE:-true}
       AVATAR_S3_BUCKET: ${AVATAR_S3_BUCKET:-user-avatars}
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      localstack:
+      web:
         condition: service_healthy
     networks:
       - strongmind
@@ -169,11 +168,7 @@ services:
       AVATAR_S3_BUCKET: ${AVATAR_S3_BUCKET:-user-avatars}
     command: ["./bin/ingestion_worker", "--once"]
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      localstack:
+      web:
         condition: service_healthy
     networks:
       - strongmind
