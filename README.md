@@ -154,13 +154,13 @@ docker compose -f docker-compose.prod.yml --env-file .env.production down -v
 ### Access Rails Console
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production exec jobs rails console
+docker compose -f docker-compose.prod.yml --env-file .env.production exec jobs bundle exec rails console
 ```
 
 ### Run Database Migrations
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production exec jobs rails db:migrate
+docker compose -f docker-compose.prod.yml --env-file .env.production exec jobs bundle exec rails db:migrate
 ```
 
 ### Check Service Status
