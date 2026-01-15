@@ -1,18 +1,16 @@
 require "rails_helper"
 
 RSpec.describe "Ingest and Process E2E" do
-  # Expected counts based on recorded VCR cassette:
-  # - 25 push events total
-  # - 18 user actors (7 are bots or orgs, which don't trigger user fetches)
-  # - 25 repositories (one per event)
+  # Expected counts based on recorded VCR cassette.
+  # User fetches are triggered for both regular users and bots.
   let(:expected_events) { 25 }
-  let(:expected_users) { 18 }
+  let(:expected_users) { 22 }  # Includes bots
   let(:expected_repositories) { 25 }
 
   around do |example|
     VCR.use_cassette(
       "e2e/ingest_and_process",
-      record: :once,
+      record: :new_episodes,
       allow_playback_repeats: true
     ) do
       example.run
@@ -42,7 +40,7 @@ RSpec.describe "Ingest and Process E2E" do
       expect(GithubRepository.count).to eq(expected_repositories)
     end
 
-    it "saves only user actors (not bots or orgs) to the database" do
+    it "saves user and bot actors to the database" do
       expect(GithubUser.count).to eq(expected_users)
     end
 
@@ -78,7 +76,7 @@ RSpec.describe "Ingest and Process E2E" do
       expect(users_with_avatars.count).to eq(expected_users)
 
       users_with_avatars.find_each do |user|
-        expect(user.avatar_key).to match(%r{^avatars/\d+(-\d+)?$})
+        expect(user.avatar_key).to match(%r{^avatars/(in-)?\d+(-\d+)?$})
         expect(storage.exists?(key: user.avatar_key)).to be(true), "Avatar not found in storage for user #{user.login}: #{user.avatar_key}"
       end
     end

@@ -208,6 +208,22 @@ RSpec.describe Github::Client do
       end
     end
 
+    context "when username contains special characters (bot)" do
+      it "URL-encodes the username in the request" do
+        stub_request(:get, "https://api.github.com/users/github-actions%5Bbot%5D")
+          .to_return(
+            status: 200,
+            body: { "id" => 41898282, "login" => "github-actions[bot]", "type" => "Bot" }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+
+        user = client.get_user(username: "github-actions[bot]")
+
+        expect(user["login"]).to eq("github-actions[bot]")
+        expect(user["type"]).to eq("Bot")
+      end
+    end
+
     context "when user is not found (404)" do
       it "raises ClientError" do
         VCR.use_cassette("github/user_not_found") do

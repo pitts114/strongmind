@@ -16,16 +16,20 @@ class PushEventRelatedFetchesEnqueuer
   end
 
   def enqueue_user_fetch(extractor)
-    if extractor.actor == :user
+    if fetchable_actor?(extractor.actor)
       FetchAndSaveGithubUserJob.perform_later(extractor.actor_login)
     else
       log_skipped_actor(extractor)
     end
   end
 
+  def fetchable_actor?(actor_type)
+    actor_type == :user || actor_type == :bot
+  end
+
   def log_skipped_actor(extractor)
     Rails.logger.info(
-      "Skipping user fetch for non-user actor - " \
+      "Skipping user fetch for non-fetchable actor - " \
       "Actor type: #{extractor.actor}, " \
       "Login: #{extractor.actor_login}, " \
       "URL: #{extractor.actor_url}"
