@@ -57,4 +57,4 @@ USER 1000:1000
 ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 
 # Default command runs the test suite
-CMD ["bundle", "exec", "rspec"]
+CMD ["bundle", "exec", "rspec", "--color", "--format", "documentation"]
