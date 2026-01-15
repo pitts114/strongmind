@@ -112,27 +112,43 @@ The key challenge is balancing **data freshness** against **API budget**. With a
 ### Core Architectural Patterns
 
 #### 1. Service Object Pattern
-All business logic is encapsulated in single-purpose service classes with a `call` method. This provides:
-- **Testability**: Services can be tested in isolation by stubbing dependencies
-- **Reusability**: Savers can be called from webhooks, imports, or admin tools
+Most business logic is encapsulated in single-purpose service classes with a `call` method.
 - **Clarity**: Each class has one reason to change (Single Responsibility Principle)
 
-#### 2. Fetcher + Saver Separation
-API-calling code is separated from persistence code:
-- **Fetcher**: Makes API calls, delegates to Saver
-- **Saver**: Handles attribute mapping and database writes
+#### 2. Gateway Pattern
+`GithubGateway` is the single point of access to the GitHub API. It configures the `Github::Client` with a Redis-backed storage layer for rate limit tracking across processes:
 
-This separation means Savers can be tested with raw data hashes without mocking HTTP.
+```ruby
+class GithubGateway
+  def create_client
+    storage = Storage::Redis.new(redis: REDIS)
+    Github::Client.new(storage: storage)
+  end
+end
+```
 
-#### 3. Gateway Pattern
-`GithubGateway` is the single point of access to the GitHub API, centralizing client configuration and making it easy to mock in tests.
+All application code should use the gateway rather than instantiating clients directly. This centralizes configuration and makes testing straightforward—tests can inject a mock gateway to avoid real API calls.
 
-#### 4. Fetch Guard Pattern
+#### 3. Fetch Guard Pattern
 Before making an API call, fetchers check with `FetchGuard` whether a fetch is needed:
 - If data exists and is fresh (< 5 minutes old), skip the API call
 - If data is stale or missing, proceed with fetch
 
 This dramatically reduces API calls when processing duplicate or related events.
+
+#### 4. Idempotency Pattern
+All persistence operations are designed to be safely retryable. Using GitHub's IDs as primary keys provides natural deduplication:
+
+```ruby
+# Push events: find_or_create prevents duplicates
+GithubPushEvent.find_or_create_by!(id: event_id) { |e| e.assign_attributes(...) }
+
+# Users/repos: find_or_initialize + update! is idempotent
+user = GithubUser.find_or_initialize_by(id: github_id)
+user.update!(attributes)
+```
+
+Multiple executions produce the same final database state, making the system resilient to job retries and duplicate events.
 
 ---
 
@@ -314,6 +330,8 @@ end
 ```
 
 This prevents wasted requests that would just get 429 responses.
+
+**Why sleep instead of raising?** This application exists solely to ingest data—there are no user-facing requests that would get stuck waiting. Sleeping until the rate limit resets is the simplest approach that keeps ingestion progressing automatically. If we needed to support latency-sensitive operations (e.g., a web UI that calls the GitHub API), we could add a `raise_on_limit: true` option to immediately raise `RateLimitError` instead of blocking.
 
 #### Layer 2: Fetch Guards (Staleness Checking)
 Before each user/repo fetch, `FetchGuard` checks:
