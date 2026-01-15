@@ -2,7 +2,7 @@ require "rails_helper"
 
 RSpec.describe GithubUserFetcher do
   let(:gateway) { instance_double(GithubGateway) }
-  let(:fetch_guard) { instance_double(GithubUserFetchGuard) }
+  let(:fetch_guard) { instance_double(FetchGuard) }
   let(:fetcher) { described_class.new(gateway: gateway, fetch_guard: fetch_guard) }
 
   describe "#call" do
@@ -20,7 +20,8 @@ RSpec.describe GithubUserFetcher do
       end
 
       before do
-        allow(fetch_guard).to receive(:find_unless_fetch_needed).with(identifier: "octocat").and_return(nil)
+        allow(GithubUser).to receive(:find_by).with(login: "octocat").and_return(nil)
+        allow(fetch_guard).to receive(:should_fetch?).with(record: nil).and_return(true)
       end
 
       it "fetches user data from API and saves it" do
@@ -66,7 +67,8 @@ RSpec.describe GithubUserFetcher do
       end
 
       before do
-        allow(fetch_guard).to receive(:find_unless_fetch_needed).with(identifier: "octocat").and_return(nil)
+        allow(GithubUser).to receive(:find_by).with(login: "octocat").and_return(nil)
+        allow(fetch_guard).to receive(:should_fetch?).with(record: nil).and_return(true)
       end
 
       it "does not enqueue UploadAvatarJob" do
@@ -87,7 +89,8 @@ RSpec.describe GithubUserFetcher do
       let(:existing_user) { instance_double(GithubUser, updated_at: 2.minutes.ago) }
 
       before do
-        allow(fetch_guard).to receive(:find_unless_fetch_needed).with(identifier: "octocat").and_return(existing_user)
+        allow(GithubUser).to receive(:find_by).with(login: "octocat").and_return(existing_user)
+        allow(fetch_guard).to receive(:should_fetch?).with(record: existing_user).and_return(false)
         allow(gateway).to receive(:get_user)
       end
 
@@ -106,7 +109,8 @@ RSpec.describe GithubUserFetcher do
 
     context "when user not found (404)" do
       before do
-        allow(fetch_guard).to receive(:find_unless_fetch_needed).and_return(nil)
+        allow(GithubUser).to receive(:find_by).and_return(nil)
+        allow(fetch_guard).to receive(:should_fetch?).with(record: nil).and_return(true)
       end
 
       it "raises Github::Client::ClientError" do
@@ -121,7 +125,8 @@ RSpec.describe GithubUserFetcher do
 
     context "when rate limited" do
       before do
-        allow(fetch_guard).to receive(:find_unless_fetch_needed).and_return(nil)
+        allow(GithubUser).to receive(:find_by).and_return(nil)
+        allow(fetch_guard).to receive(:should_fetch?).with(record: nil).and_return(true)
       end
 
       it "raises Github::Client::RateLimitError" do
@@ -136,7 +141,8 @@ RSpec.describe GithubUserFetcher do
 
     context "when server error occurs" do
       before do
-        allow(fetch_guard).to receive(:find_unless_fetch_needed).and_return(nil)
+        allow(GithubUser).to receive(:find_by).and_return(nil)
+        allow(fetch_guard).to receive(:should_fetch?).with(record: nil).and_return(true)
       end
 
       it "raises Github::Client::ServerError" do
@@ -152,7 +158,8 @@ RSpec.describe GithubUserFetcher do
 
   describe "error logging" do
     before do
-      allow(fetch_guard).to receive(:find_unless_fetch_needed).and_return(nil)
+      allow(GithubUser).to receive(:find_by).and_return(nil)
+      allow(fetch_guard).to receive(:should_fetch?).with(record: nil).and_return(true)
       allow(Rails.logger).to receive(:info)
       allow(Rails.logger).to receive(:warn)
     end

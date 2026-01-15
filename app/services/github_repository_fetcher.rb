@@ -1,15 +1,16 @@
 class GithubRepositoryFetcher
-  def initialize(gateway: GithubGateway.new, fetch_guard: GithubRepositoryFetchGuard.new)
+  def initialize(gateway: GithubGateway.new, fetch_guard: FetchGuard.new)
     @gateway = gateway
     @fetch_guard = fetch_guard
   end
 
   def call(owner:, repo:)
     full_name = "#{owner}/#{repo}"
+    existing_repository = GithubRepository.find_by(full_name: full_name)
 
-    if (repository = fetch_guard.find_unless_fetch_needed(identifier: full_name))
-      Rails.logger.info("Skipping fetch for repository #{full_name} - fetch not needed (last updated: #{repository.updated_at})")
-      return repository
+    unless fetch_guard.should_fetch?(record: existing_repository)
+      Rails.logger.info("Skipping fetch for repository #{full_name} - fetch not needed (last updated: #{existing_repository.updated_at})")
+      return existing_repository
     end
 
     fetch_and_save(owner, repo)
