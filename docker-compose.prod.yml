@@ -2,7 +2,6 @@ services:
   # PostgreSQL Database
   db:
     image: postgres:18.0
-    restart: unless-stopped
     environment:
       POSTGRES_USER: ${DATABASE_USERNAME:-postgres}
       POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
@@ -20,7 +19,6 @@ services:
   # Redis Cache
   redis:
     image: redis:8.2.2
-    restart: unless-stopped
     networks:
       - strongmind
     healthcheck:
@@ -32,7 +30,6 @@ services:
   # LocalStack (S3-compatible object storage)
   localstack:
     image: localstack/localstack:latest
-    restart: unless-stopped
     ports:
       - "4566:4566"
     environment:
@@ -55,7 +52,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    restart: unless-stopped
     ports:
       - "3000:80"
     environment:
@@ -64,15 +60,16 @@ services:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       DATABASE_USERNAME: ${DATABASE_USERNAME:-postgres}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-postgres}
-      DATABASE_HOST: db
-      DATABASE_PORT: 5432
-      REDIS_URL: redis://redis:6379/1
+      DATABASE_HOST: ${DATABASE_HOST:-db}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/1}
       # S3 Storage (LocalStack)
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
-      AWS_REGION: us-east-1
-      S3_ENDPOINT: http://localstack:4566
-      S3_BUCKET: user-avatars
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-http://localstack:4566}
+      AWS_FORCE_PATH_STYLE: ${AWS_FORCE_PATH_STYLE:-true}
+      AVATAR_S3_BUCKET: ${AVATAR_S3_BUCKET:-user-avatars}
     depends_on:
       db:
         condition: service_healthy
@@ -88,7 +85,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    restart: unless-stopped
     command: ["bundle", "exec", "sidekiq"]
     environment:
       RAILS_ENV: production
@@ -96,15 +92,16 @@ services:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       DATABASE_USERNAME: ${DATABASE_USERNAME:-postgres}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-postgres}
-      DATABASE_HOST: db
-      DATABASE_PORT: 5432
-      REDIS_URL: redis://redis:6379/1
+      DATABASE_HOST: ${DATABASE_HOST:-db}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/1}
       # S3 Storage (LocalStack)
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
-      AWS_REGION: us-east-1
-      S3_ENDPOINT: http://localstack:4566
-      S3_BUCKET: user-avatars
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-http://localstack:4566}
+      AWS_FORCE_PATH_STYLE: ${AWS_FORCE_PATH_STYLE:-true}
+      AVATAR_S3_BUCKET: ${AVATAR_S3_BUCKET:-user-avatars}
     depends_on:
       db:
         condition: service_healthy
@@ -120,7 +117,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    restart: unless-stopped
     command: ["./bin/ingestion_worker"]
     environment:
       RAILS_ENV: production
@@ -128,16 +124,17 @@ services:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       DATABASE_USERNAME: ${DATABASE_USERNAME:-postgres}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-postgres}
-      DATABASE_HOST: db
-      DATABASE_PORT: 5432
-      REDIS_URL: redis://redis:6379/1
+      DATABASE_HOST: ${DATABASE_HOST:-db}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/1}
       INGESTION_POLL_INTERVAL: ${INGESTION_POLL_INTERVAL:-60}
       # S3 Storage (LocalStack)
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
-      AWS_REGION: us-east-1
-      S3_ENDPOINT: http://localstack:4566
-      S3_BUCKET: user-avatars
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-http://localstack:4566}
+      AWS_FORCE_PATH_STYLE: ${AWS_FORCE_PATH_STYLE:-true}
+      AVATAR_S3_BUCKET: ${AVATAR_S3_BUCKET:-user-avatars}
     depends_on:
       db:
         condition: service_healthy
@@ -160,16 +157,17 @@ services:
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       DATABASE_USERNAME: ${DATABASE_USERNAME:-postgres}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-postgres}
-      DATABASE_HOST: db
-      DATABASE_PORT: 5432
-      REDIS_URL: redis://redis:6379/1
+      DATABASE_HOST: ${DATABASE_HOST:-db}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/1}
       # S3 Storage (LocalStack)
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
-      AWS_REGION: us-east-1
-      S3_ENDPOINT: http://localstack:4566
-      S3_BUCKET: user-avatars
-    command: ["bundle", "exec", "rails", "runner", "FetchAndEnqueuePushEventsService.new.call"]
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-http://localstack:4566}
+      AWS_FORCE_PATH_STYLE: ${AWS_FORCE_PATH_STYLE:-true}
+      AVATAR_S3_BUCKET: ${AVATAR_S3_BUCKET:-user-avatars}
+    command: ["./bin/ingestion_worker", "--once"]
     depends_on:
       db:
         condition: service_healthy
@@ -193,15 +191,16 @@ services:
       SECRET_KEY_BASE: test-secret-key-base-for-testing-only
       DATABASE_USERNAME: ${DATABASE_USERNAME:-postgres}
       DATABASE_PASSWORD: ${DATABASE_PASSWORD:-postgres}
-      DATABASE_HOST: db
-      DATABASE_PORT: 5432
+      DATABASE_HOST: ${DATABASE_HOST:-db}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
       REDIS_URL: redis://redis:6379/2
       # S3 Storage (LocalStack)
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
-      AWS_REGION: us-east-1
-      S3_ENDPOINT: http://localstack:4566
-      S3_BUCKET: user-avatars-test
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ENDPOINT_URL: ${AWS_ENDPOINT_URL:-http://localstack:4566}
+      AWS_FORCE_PATH_STYLE: ${AWS_FORCE_PATH_STYLE:-true}
+      AVATAR_S3_BUCKET: ${AVATAR_S3_BUCKET:-user-avatars}
     depends_on:
       db:
         condition: service_healthy

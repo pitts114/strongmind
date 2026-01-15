@@ -17,6 +17,14 @@ VCR.configure do |config|
   # Allow connections to localhost (for any local development servers)
   config.ignore_localhost = true
 
+  # Allow real connections to LocalStack S3 (works in both local dev and Docker)
+  # Local dev uses localhost:4566, Docker uses localstack:4566
+  config.ignore_request do |request|
+    uri = URI(request.uri)
+    localstack_hosts = %w[localhost localstack]
+    localstack_hosts.include?(uri.host) && uri.port == 4566
+  end
+
   # Filter sensitive data if needed in the future
   # config.filter_sensitive_data('<GITHUB_TOKEN>') { ENV['GITHUB_TOKEN'] }
 end

@@ -1,6 +1,10 @@
 class FetchAndSaveGithubUserJob < ApplicationJob
+  # Exponential backoff: (executions^4) + 2 seconds
+  # This matches Rails' :exponentially_longer but avoids compatibility issues with Sidekiq
+  EXPONENTIAL_BACKOFF = ->(executions) { ((executions || 1)**4) + 2 }
+
   # Retry on transient errors with exponential backoff
-  retry_on Github::Client::ServerError, wait: :exponentially_longer, attempts: 5 do |job, error|
+  retry_on Github::Client::ServerError, wait: EXPONENTIAL_BACKOFF, attempts: 5 do |job, error|
     username = job.arguments.first
     Rails.logger.error("FetchAndSaveGithubUserJob: Failed after max retries (server error) - username: #{username}, error: #{error.message}")
   end

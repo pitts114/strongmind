@@ -7,7 +7,20 @@ $stderr.sync = true
 # Load Rails environment
 require_relative "../config/environment"
 
-# Start the ingestion worker
-# Poll interval can be configured via INGESTION_POLL_INTERVAL env var
-# or defaults to 60 seconds
-IngestionWorker.new.start
+# Parse command line arguments
+once_mode = ARGV.include?("--once") || ARGV.include?("-1")
+
+if once_mode
+  # In once mode, run jobs inline so they execute immediately
+  # instead of being enqueued for a background worker
+  Rails.application.config.active_job.queue_adapter = :inline
+  Rails.logger.info("IngestionWorker: Running in once mode with inline job processing")
+
+  # Run a single fetch cycle (useful for manual/cron invocation)
+  IngestionWorker.new.run_once
+else
+  # Start continuous polling loop
+  # Poll interval can be configured via INGESTION_POLL_INTERVAL env var
+  # or defaults to 60 seconds
+  IngestionWorker.new.start
+end

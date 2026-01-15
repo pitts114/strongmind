@@ -13,6 +13,7 @@
 !/.env.example
 !/.env.production.example
 !/.env.test
+!/.env.test.docker
 
 # Ignore all logfiles and tempfiles.
 /log/*
