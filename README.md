@@ -212,7 +212,7 @@ docker compose -f docker-compose.prod.yml --env-file .env.production ps
 
 ```bash
 # Run tests with verbose output
-docker compose -f docker-compose.prod.yml --env-file .env.test.docker run --rm --build test bundle exec rspec --format documentation
+docker compose -f docker-compose.prod.yml --env-file .env.test.docker run --rm --build test
 ```
 
 # Local Development
