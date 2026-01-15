@@ -448,20 +448,23 @@ While duplicate jobs may be enqueued (see "Idempotency Guarantees" above), the s
 
 ### Fetch Guard Strategy
 
-Both `GithubUserFetcher` and `GithubRepositoryFetcher` use fetch guard services to determine if a fetch is needed:
+Both `GithubUserFetcher` and `GithubRepositoryFetcher` use a fetch guard to determine if a fetch is needed:
 
 ```ruby
 class GithubUserFetcher
-  def initialize(gateway: GithubGateway.new, fetch_guard: GithubUserFetchGuard.new)
+  def initialize(gateway: GithubGateway.new, fetch_guard: FetchGuard.new)
     @gateway = gateway
     @fetch_guard = fetch_guard
   end
 
   def call(username:)
-    # Returns existing record if fetch not needed, nil if fetch is needed
-    if (user = fetch_guard.find_unless_fetch_needed(identifier: username))
+    # Fetcher finds its own records
+    existing_user = GithubUser.find_by(login: username)
+
+    # Ask fetch guard if we should fetch (boolean decision)
+    unless fetch_guard.should_fetch?(record: existing_user)
       Rails.logger.info("Skipping fetch - fetch not needed")
-      return user
+      return existing_user
     end
 
     fetch_and_save(username)
@@ -470,18 +473,24 @@ end
 ```
 
 **How it works:**
-1. Fetch guard queries for record with `updated_at` within threshold (single query)
-2. If record exists and fetch is not needed, return it immediately (no API call)
-3. If fetch is needed (stale or missing), fetch from GitHub API
+1. Fetcher finds existing record using standard ActiveRecord query
+2. Fetcher asks fetch guard if fetch is needed (boolean return value)
+3. If fetch is not needed, return existing record (no API call)
+4. If fetch is needed (stale or missing), fetch from GitHub API
 
 **Fetch Guard Architecture:**
-- `FetchGuard` - Shared concern with `find_unless_fetch_needed` method and default staleness threshold
-- `GithubUserFetchGuard` - Implements `find_fresh_record` to query by `login`
-- `GithubRepositoryFetchGuard` - Implements `find_fresh_record` to query by `full_name`
+- `FetchGuard` - Simple class with just `should_fetch?(record:)` method
+- Each fetcher is responsible for finding its own records
+- `GithubUserFetcher` queries by `login`
+- `GithubRepositoryFetcher` queries by `full_name`
 
-Each implementation provides its own `find_fresh_record(identifier:, threshold:)` method, giving full control over how records are looked up (single attribute, multiple attributes, complex queries, etc.).
+**Benefits:**
+- Fetchers know how to find their own records (separation of concerns)
+- Fetch guard focuses solely on the decision logic (when to fetch)
+- Boolean return values are clear and explicit
+- Simpler architecture with less indirection
 
-**Extensibility:** The fetch guard abstraction can be extended to check additional conditions:
+**Extensibility:** The fetch guard can be extended to check additional conditions:
 - In-flight tracking (another job is already fetching this resource)
 - Backoff/circuit breaker (recently failed, don't retry yet)
 - Permanent skip (known deleted/private resource)
@@ -489,7 +498,7 @@ Each implementation provides its own `find_fresh_record(identifier:, threshold:)
 **Configurable staleness threshold:**
 - `STALENESS_THRESHOLD_MINUTES` (default: 5) - How long before data is considered stale
 - Set to `0` to always fetch (disable caching)
-- Individual fetch guards can override this by implementing their own `staleness_threshold_minutes` method
+- Can be overridden per-instance: `FetchGuard.new(staleness_threshold_minutes: 10)`
 
 **Database indexes:**
 - `github_users.login` - Indexed for fast staleness lookups
