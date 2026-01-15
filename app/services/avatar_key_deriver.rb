@@ -38,24 +38,25 @@ class AvatarKeyDeriver
   end
 
   def extract_key(uri, url)
-    user_id = extract_user_id(uri, url)
+    id_info = extract_id(uri, url)
     version = extract_version(uri)
 
-    if version
-      "avatars/#{user_id}-#{version}"
-    else
-      "avatars/#{user_id}"
-    end
+    base_key = "avatars/#{id_info[:prefix]}#{id_info[:id]}"
+    version ? "#{base_key}-#{version}" : base_key
   end
 
-  def extract_user_id(uri, url)
-    match = uri.path.match(%r{\A/u/(\d+)\z})
-
-    unless match
-      raise InvalidUrlError, "Cannot extract user ID from URL: #{url}"
+  def extract_id(uri, url)
+    # Match user avatars: /u/{user_id}
+    if (match = uri.path.match(%r{\A/u/(\d+)\z}))
+      return { id: match[1], prefix: "" }
     end
 
-    match[1]
+    # Match app/bot avatars: /in/{app_id}
+    if (match = uri.path.match(%r{\A/in/(\d+)\z}))
+      return { id: match[1], prefix: "in-" }
+    end
+
+    raise InvalidUrlError, "Cannot extract ID from URL: #{url}"
   end
 
   def extract_version(uri)

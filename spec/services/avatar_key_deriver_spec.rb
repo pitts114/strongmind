@@ -49,6 +49,18 @@ RSpec.describe AvatarKeyDeriver do
         expect(result).to eq("avatars/12345-3")
       end
 
+      it "handles bot/app avatar URLs with /in/ path" do
+        result = deriver.call(url: "https://avatars.githubusercontent.com/in/15368?v=4")
+
+        expect(result).to eq("avatars/in-15368-4")
+      end
+
+      it "handles bot/app avatar URLs without version" do
+        result = deriver.call(url: "https://avatars.githubusercontent.com/in/15368")
+
+        expect(result).to eq("avatars/in-15368")
+      end
+
       it "ignores other query parameters" do
         result = deriver.call(url: "https://avatars.githubusercontent.com/u/12345?s=200&v=4")
 
@@ -94,19 +106,19 @@ RSpec.describe AvatarKeyDeriver do
       it "raises InvalidUrlError when path doesn't match pattern" do
         expect {
           deriver.call(url: "https://avatars.githubusercontent.com/some/other/path")
-        }.to raise_error(AvatarKeyDeriver::InvalidUrlError, /Cannot extract user ID/)
+        }.to raise_error(AvatarKeyDeriver::InvalidUrlError, /Cannot extract ID/)
       end
 
       it "raises InvalidUrlError for non-numeric user IDs" do
         expect {
           deriver.call(url: "https://avatars.githubusercontent.com/u/octocat")
-        }.to raise_error(AvatarKeyDeriver::InvalidUrlError, /Cannot extract user ID/)
+        }.to raise_error(AvatarKeyDeriver::InvalidUrlError, /Cannot extract ID/)
       end
 
       it "raises InvalidUrlError for empty path" do
         expect {
           deriver.call(url: "https://avatars.githubusercontent.com/")
-        }.to raise_error(AvatarKeyDeriver::InvalidUrlError, /Cannot extract user ID/)
+        }.to raise_error(AvatarKeyDeriver::InvalidUrlError, /Cannot extract ID/)
       end
     end
 
