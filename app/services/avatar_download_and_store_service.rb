@@ -3,7 +3,7 @@
 require "github/avatars_client"
 require "tmpdir"
 
-class AvatarDownloadAndUploadService
+class AvatarDownloadAndStoreService
   class Error < StandardError; end
   class DownloadError < Error; end
   class InvalidUrlError < Error; end
@@ -31,7 +31,7 @@ class AvatarDownloadAndUploadService
     key = derive_key(avatar_url)
 
     if storage.exists?(key: key)
-      Rails.logger.info("AvatarDownloadAndUploadService: Avatar already exists, skipping - key: #{key}")
+      Rails.logger.info("AvatarDownloadAndStoreService: Avatar already exists, skipping - key: #{key}")
       return { key: key, uploaded: false, skipped: true }
     end
 
@@ -50,7 +50,7 @@ class AvatarDownloadAndUploadService
   end
 
   def check_file_size(avatar_url:)
-    Rails.logger.info("AvatarDownloadAndUploadService: Checking file size - url: #{avatar_url}")
+    Rails.logger.info("AvatarDownloadAndStoreService: Checking file size - url: #{avatar_url}")
 
     headers = client.head(url: avatar_url)
     content_length = headers[:content_length]
@@ -68,19 +68,19 @@ class AvatarDownloadAndUploadService
   end
 
   def download_and_upload(avatar_url:, key:)
-    Rails.logger.info("AvatarDownloadAndUploadService: Downloading avatar - url: #{avatar_url}")
+    Rails.logger.info("AvatarDownloadAndStoreService: Downloading avatar - url: #{avatar_url}")
 
     Dir.mktmpdir("avatar") do |dir|
       temp_path = File.join(dir, "avatar.tmp")
       content_type = download_to_file(avatar_url: avatar_url, path: temp_path)
 
-      Rails.logger.info("AvatarDownloadAndUploadService: Uploading avatar - key: #{key}, content_type: #{content_type}")
+      Rails.logger.info("AvatarDownloadAndStoreService: Storing avatar - key: #{key}, content_type: #{content_type}")
 
       File.open(temp_path, "rb") do |file|
         storage.upload(key: key, body: file, content_type: content_type)
       end
 
-      Rails.logger.info("AvatarDownloadAndUploadService: Avatar uploaded successfully - key: #{key}")
+      Rails.logger.info("AvatarDownloadAndStoreService: Avatar stored successfully - key: #{key}")
       return { key: key, uploaded: true, skipped: false }
     end
     # Directory and file automatically cleaned up when block exits
