@@ -43,7 +43,7 @@ class GithubUserFetcher
 
   def enqueue_avatar_upload(user:, avatar_url:)
     if avatar_url.present?
-      UploadAvatarJob.perform_later(user.id, avatar_url)
+      ProcessAvatarJob.perform_later(user.id, avatar_url)
       Rails.logger.info("Enqueued avatar upload for user #{user.login} (ID: #{user.id}) - url: #{avatar_url}")
     else
       Rails.logger.info("No avatar URL found for user #{user.login}, skipping avatar upload")
