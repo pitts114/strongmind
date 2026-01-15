@@ -6,37 +6,13 @@ A service that ingests GitHub push events, enriches them with user and repositor
 
 ---
 
-# Development
-
-## Setup
-1. **Create Environment File**
-   ```bash
-   # Copy the template (already has working defaults)
-   cp .env.example .env
-   ```
-
-2. **Install Dependencies**
-   ```bash
-   bundle install
-   ```
-
-## Server
-`bundle exec rails server`
-
-## Sidekiq
-`bundle exec sidekiq`
-
 # Production Deployment with Docker Compose
 
 ## Prerequisites
-- Docker 20.10+ with Compose V2
+
+- Docker Desktop 4.0+ for macOS
 
 ## Quick Start
-
-### Prerequisites
-
-- Docker 20.10+ with Docker Compose V2
-- macOS with Docker Desktop (or Linux with Docker)
 
 ### Start the System
 
@@ -51,7 +27,8 @@ docker compose -f docker-compose.prod.yml --env-file .env.production up --build
 This starts:
 - **PostgreSQL** - Database for storing events and enriched data
 - **Redis** - Rate limiting and caching
-- **Web** - Rails web application (http://localhost:3000)
+- **LocalStack** - S3-compatible object storage for avatars
+- **Web** - Rails web server (serves Sidekiq dashboard)
 - **Jobs** - Sidekiq background job processor
 - **Ingestion** - Continuous GitHub event ingestion worker
 
@@ -60,13 +37,13 @@ This starts:
 The ingestion worker runs continuously when you start the system. To run a single ingestion cycle manually:
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production run --rm ingest
+docker compose -f docker-compose.prod.yml --env-file .env.production run --rm --build ingest
 ```
 
 ### Run Tests
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production run --rm test
+docker compose -f docker-compose.prod.yml --env-file .env.test.docker run --rm --build test
 ```
 
 ### View Logs
@@ -78,7 +55,6 @@ docker compose -f docker-compose.prod.yml --env-file .env.production logs -f
 # Specific service
 docker compose -f docker-compose.prod.yml --env-file .env.production logs -f ingestion
 docker compose -f docker-compose.prod.yml --env-file .env.production logs -f jobs
-docker compose -f docker-compose.prod.yml --env-file .env.production logs -f web
 ```
 
 ## How to Verify the System is Working
@@ -149,17 +125,6 @@ ORDER BY updated_at DESC
 LIMIT 10;
 ```
 
-### Timeline for Results
-
-| Event | Expected Time |
-|-------|---------------|
-| Services start | ~30 seconds after `up --build` |
-| First API fetch | ~1 minute after services healthy |
-| Push events in database | ~1-2 minutes |
-| Enriched users/repos | ~2-5 minutes (depends on job queue) |
-
-**Note:** Without a GitHub token, the API is limited to 60 requests/hour. The system handles this gracefully by backing off when limits are reached.
-
 ## Stop the System
 
 ```bash
@@ -178,13 +143,13 @@ docker compose -f docker-compose.prod.yml --env-file .env.production down -v
 ### Access Rails Console
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production exec web rails console
+docker compose -f docker-compose.prod.yml --env-file .env.production exec jobs rails console
 ```
 
 ### Run Database Migrations
 
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.production exec web rails db:migrate
+docker compose -f docker-compose.prod.yml --env-file .env.production exec jobs rails db:migrate
 ```
 
 ### Check Service Status
@@ -209,23 +174,10 @@ See `.env.production.example` for all options. Key variables:
 | `DATABASE_PASSWORD` | postgres | PostgreSQL password |
 | `INGESTION_POLL_INTERVAL` | 60 | Seconds between GitHub API polls |
 | `RAILS_LOG_LEVEL` | info | Log verbosity (debug/info/warn/error) |
-
-## Architecture
-
-```
-┌─────────────────┐     ┌─────────────────┐
-│  GitHub API     │     │   PostgreSQL    │
-│  /events        │     │   Database      │
-└────────┬────────┘     └────────▲────────┘
-         │                       │
-         ▼                       │
-┌─────────────────┐     ┌────────┴────────┐
-│  Ingestion      │────▶│  Jobs (Sidekiq) │
-│  Worker         │     │  - HandlePush   │
-└─────────────────┘     │  - FetchUser    │
-                        │  - FetchRepo    │
-                        └─────────────────┘
-```
+| `AWS_ACCESS_KEY_ID` | test | S3 access key (use `test` for LocalStack) |
+| `AWS_SECRET_ACCESS_KEY` | test | S3 secret key (use `test` for LocalStack) |
+| `AWS_ENDPOINT_URL` | http://localstack:4566 | S3 endpoint URL |
+| `AVATAR_S3_BUCKET` | user-avatars | S3 bucket for user avatars |
 
 ## Troubleshooting
 
@@ -249,22 +201,40 @@ docker compose -f docker-compose.prod.yml --env-file .env.production ps
 
 ```bash
 # Run tests with verbose output
-docker compose -f docker-compose.prod.yml --env-file .env.production run --rm test bundle exec rspec --format documentation
+docker compose -f docker-compose.prod.yml --env-file .env.test.docker run --rm --build test bundle exec rspec --format documentation
 ```
 
-## Development Setup
+# Local Development
 
-For local development without Docker:
+For local development without Docker (requires local PostgreSQL, Redis, and LocalStack).
 
+## Setup
+1. **Create Environment File**
+   ```bash
+   # Copy the template (already has working defaults)
+   cp .env.example .env
+   ```
+
+2. **Install Dependencies**
+   ```bash
+   bundle install
+   ```
+
+3. **Setup Database**
+   ```bash
+   rails db:prepare
+   ```
+
+## Sidekiq (Background Jobs)
 ```bash
-# Install dependencies
-bundle install
-
-# Setup database
-rails db:prepare
-
-# Start services (requires local PostgreSQL and Redis)
-bundle exec rails server
 bundle exec sidekiq
+```
+
+## Ingestion Worker
+```bash
+# Continuous polling (default)
 bin/ingestion_worker
+
+# Single fetch cycle (one-time)
+bin/ingestion_worker --once
 ```
