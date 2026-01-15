@@ -19,6 +19,14 @@ RSpec.describe "Ingest and Process E2E" do
     end
   end
 
+  after do
+    # Clean up uploaded avatars from storage
+    storage = AvatarStorage::S3.new
+    GithubUser.where.not(avatar_key: nil).find_each do |user|
+      storage.delete(key: user.avatar_key)
+    end
+  end
+
   describe "single ingest and process cycle" do
     before do
       perform_enqueued_jobs do
@@ -60,6 +68,18 @@ RSpec.describe "Ingest and Process E2E" do
       GithubUser.find_each do |user|
         expect(user.id).to be_present
         expect(user.login).to be_present
+      end
+    end
+
+    it "uploads avatars to storage and sets avatar_key on users" do
+      storage = AvatarStorage::S3.new
+
+      users_with_avatars = GithubUser.where.not(avatar_key: nil)
+      expect(users_with_avatars.count).to eq(expected_users)
+
+      users_with_avatars.find_each do |user|
+        expect(user.avatar_key).to match(%r{^avatars/\d+(-\d+)?$})
+        expect(storage.exists?(key: user.avatar_key)).to be(true), "Avatar not found in storage for user #{user.login}: #{user.avatar_key}"
       end
     end
   end
