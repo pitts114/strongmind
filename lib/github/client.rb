@@ -1,6 +1,7 @@
 require "net/http"
 require "json"
 require "uri"
+require "cgi"
 require_relative "storage"
 require_relative "storage/memory"
 require_relative "rate_limiter"
@@ -75,7 +76,7 @@ module Github
     # @raise [ServerError] on server errors or network failures
     # @raise [ClientError] on client errors (e.g., 404 user not found)
     def get_user(username:)
-      execute_request(endpoint: "/users/#{username}")
+      execute_request(endpoint: "/users/#{CGI.escape(username)}")
     end
 
     # Fetch a specific GitHub repository
